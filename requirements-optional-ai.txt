@@ -1,0 +1,4 @@
+# Optional heavyweight Grounding DINO + SAM (requires complete model weights).
+transformers>=4.45,<5
+huggingface-hub>=0.25,<2
+safetensors>=0.4,<1

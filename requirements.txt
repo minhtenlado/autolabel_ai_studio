@@ -1,0 +1,5 @@
+# Web backend / dataset / review / exports. No AI runtime needed for WEB mode.
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+pillow>=10,<13
+psutil>=5.9,<8

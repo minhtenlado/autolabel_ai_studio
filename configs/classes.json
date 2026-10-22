@@ -1,0 +1,1 @@
+{"names":["bus","car","container","motorcycle","truck"],"grounding_dino_prompts":{"bus":["bus","passenger bus","city bus"],"car":["car","passenger car","sedan","SUV"],"motorcycle":["motorcycle","motorbike","scooter"],"truck":["truck","cargo truck","delivery truck"],"container":["container truck","semi truck carrying a shipping container","shipping container truck"]}}

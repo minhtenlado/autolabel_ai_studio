@@ -1,0 +1,2 @@
+# Install torch/torchvision first with the correct CPU/CUDA/ROCm wheel.
+ultralytics>=8.4,<9

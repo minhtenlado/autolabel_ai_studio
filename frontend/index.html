@@ -1,0 +1,116 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>AutoLabel AI Studio</title><link rel="stylesheet" href="/styles.css?v=20261022_4"></head><body><div class="app"><aside class="side"><div class="brand"><div class="brandmark">A<span>.</span></div><div><strong>AutoLabel</strong><small>AI STUDIO</small></div></div><div class="workspace-tag"><i></i> LOCAL WORKSPACE</div><nav><button class="nav active" data-view="dashboard"><b>◫</b> Tổng quan</button><button class="nav" data-view="dataset"><b>▧</b> Dataset</button><button class="nav" data-view="labeling"><b>✳</b> Auto labeling</button><button class="nav" data-view="traffic"><b>◉</b> Traffic state</button><button class="nav" data-view="review"><b>⌗</b> Review queue <span id="reviewBadge" class="badge">0</span></button><button class="nav" data-view="export"><b>⇧</b> Export dataset</button></nav><div class="side-bottom"><div class="gpu-dot"><span id="gpuLed"></span><div><b id="gpuName">Đang kiểm tra GPU</b><small id="gpuInfo">Local inference only</small></div></div><div class="side-foot">v0.3.0 · CPU / GPU / macOS / Windows</div></div></aside><main><header class="top"><div><div class="crumb">WORKSPACE <span>/</span> <b id="pageName">Tổng quan</b></div><h1 id="title">Tổng quan dataset</h1></div><div class="topright"><span class="local-pill"><i></i> OFFLINE READY</span><button class="iconbtn" title="Làm mới" onclick="refreshAll()">⟳</button><div class="avatar">TN</div></div></header>
+<div id="globalJobBanner" class="global-job-banner">
+  <div class="banner-status-col">
+    <span id="bannerJobBadge" class="state-chip">IDLE</span>
+    <span id="bannerCurFile" class="banner-file-txt" title="Tệp đang xử lý">—</span>
+  </div>
+  <div class="banner-progress-col">
+    <div class="banner-bar-track">
+      <div id="bannerBar" class="banner-bar"></div>
+    </div>
+    <div class="banner-meta">
+      <span id="bannerProgressTxt">Chưa có job</span>
+      <b id="bannerPct">0%</b>
+      <small id="bannerSpeedTxt"></small>
+    </div>
+  </div>
+  <div class="banner-actions">
+    <button class="ghost mini" id="gBtnPause" onclick="jobAction('pause')" title="Tạm dừng gán nhãn">⏸ Tạm dừng</button>
+    <button class="ghost mini" id="gBtnResume" onclick="jobAction('resume')" title="Tiếp tục gán nhãn">▶ Tiếp tục</button>
+    <button class="ghost mini" id="gBtnStop" onclick="jobAction('stop')" title="Dừng an toàn sau khi xong ảnh hiện tại">⏹ Dừng</button>
+    <button class="danger mini" id="gBtnCancel" onclick="cancelJob()" title="Hủy bỏ tiến trình ngay lập tức">✕ Hủy job</button>
+  </div>
+</div>
+<section class="view active" id="dashboard"><div class="hero"><div><div class="eyebrow"><span class="spark">✳</span> COMPUTER VISION WORKSPACE</div><h2>Gán nhãn chính xác hơn.<br><em>Kiểm soát từng dự đoán.</em></h2><p>Pipeline local với YOLO26, đối chiếu Grounding DINO và gợi ý hình học từ SAM.</p><button class="primary" onclick="showView('labeling')">Cấu hình pipeline <span>→</span></button></div><div class="hero-art"><div class="radar"><div class="radar-ring r1"></div><div class="radar-ring r2"></div><div class="radar-ring r3"></div><div class="crosshair"></div><div class="target-box"><i></i><label>car <b>0.94</b></label></div><div class="target-box target2"><i></i><label>truck <b>0.88</b></label></div><div class="radar-center">AI</div></div><div class="art-label">LIVE INFERENCE <span>● READY</span></div></div></div>
+<div class="section-head"><div><h3>Dataset overview</h3><p>Thống kê cập nhật trực tiếp từ workspace</p></div><button class="ghost" onclick="showView('dataset')">Mở dataset <span>↗</span></button></div><div class="stats-grid"><article class="stat"><div class="stat-top"><span>Ảnh trong project</span><i>▧</i></div><strong id="sImages">—</strong><small id="sPending">Chưa nhập dữ liệu</small></article><article class="stat"><div class="stat-top"><span>Đã xử lý</span><i class="green">✓</i></div><strong id="sProcessed">—</strong><small id="sSpeed">Ảnh hoàn tất</small></article><article class="stat"><div class="stat-top"><span>Đối tượng</span><i class="violet">⌗</i></div><strong id="sObjects">—</strong><small id="sReviewed">Trong annotation store</small></article><article class="stat"><div class="stat-top"><span>Cần xem lại</span><i class="amber">!</i></div><strong id="sReview">—</strong><small>AI không tự xác nhận chính xác tuyệt đối</small></article></div><div class="bottom-grid"><article class="panel"><div class="panel-head"><div><h3>Class distribution</h3><p>Số nhãn đang được chấp nhận</p></div><span class="live-chip">● LIVE DATA</span></div><div id="classChart" class="chart"></div></article><article class="panel job-panel"><div class="panel-head"><div><h3>Pipeline status</h3><p>Tiến độ xử lý hiện tại</p></div><span id="jobState" class="state-chip">IDLE</span></div><div class="job-progress"><div class="progress-line"><span id="progressBar"></span></div><div class="progress-meta"><span id="progressText">Chưa có job</span><b id="progressPct">0%</b></div></div><div class="current-file"><div class="file-ico">◷</div><div><small>ĐANG XỬ LÝ</small><b id="currentFile">—</b></div></div><div class="job-actions"><button class="ghost small" onclick="jobAction('pause')">Tạm dừng</button><button class="ghost small" onclick="jobAction('resume')">Tiếp tục</button><button class="ghost small" onclick="jobAction('stop')">Dừng an toàn</button><button class="danger small" onclick="cancelJob()">✕ Hủy job</button></div></article></div><div class="notice"><span>ⓘ</span><div><b>Quality score là điểm heuristic, không phải xác suất.</b><p>Chỉ có dự đoán đồng thuận class + IoU cao mới được xem là nhãn ít rủi ro. Mọi pseudo-label vẫn cần kiểm chứng trước khi huấn luyện.</p></div></div></section>
+<section class="view" id="dataset"><div class="panel import-panel"><div class="panel-head"><div><h3>Import image folder</h3><p>Quét thư mục con, phát hiện file hỏng và trùng bằng SHA-256. Ảnh gốc không bị sửa.</p></div><div class="upload-icon">↥</div></div><div class="form-row">
+  <label class="field grow"><span>Đường dẫn thư mục trên máy chủ local</span><input id="datasetPath" placeholder="Ví dụ: /home/user/dataset hoặc D:\dataset"></label>
+  <button class="primary" id="importBtn" onclick="importDataset()">Quét & nhập <span>↗</span></button>
+  <button class="danger" type="button" onclick="clearDataset()" title="Xóa toàn bộ danh sách ảnh cũ để bắt đầu thư mục mới">🗑️ Xóa dữ liệu cũ / Làm mới</button>
+</div>
+<div style="margin:8px 0 12px;display:flex;align-items:center;gap:8px;">
+  <input type="checkbox" id="clearFirst" style="width:16px;height:16px;cursor:pointer;">
+  <label for="clearFirst" style="font-size:12px;color:var(--muted);cursor:pointer;"><b>Xóa toàn bộ ảnh cũ trước khi nhập thư mục này</b> (Bật nếu bạn muốn gán nhãn cho một thư mục mới hoàn toàn)</label>
+</div>
+<div id="importResult" class="hint">Hỗ trợ JPG, JPEG, PNG, WEBP, BMP · Nhận diện nhãn YOLO có sẵn ở cấu trúc labels/ nếu tìm thấy.</div></div><div class="section-head table-head"><div><h3>Ảnh trong workspace <span id="imageCount" class="count-pill">0</span></h3><p>Chọn ảnh để xem nhãn và chỉnh sửa thủ công</p></div><div class="filters"><input id="imageSearch" placeholder="⌕  Tìm tên ảnh..." oninput="loadImages()"><select id="statusFilter" onchange="loadImages()"><option value="all">Mọi trạng thái</option><option value="pending">Chờ xử lý</option><option value="processed">Đã xử lý</option><option value="failed">Lỗi</option></select></div></div><div class="panel table-wrap"><table><thead><tr><th>ẢNH / ĐƯỜNG DẪN</th><th>KÍCH THƯỚC</th><th>NHÃN</th><th>TRẠNG THÁI</th><th></th></tr></thead><tbody id="imageRows"><tr><td colspan="5" class="empty">Import thư mục ảnh để bắt đầu.</td></tr></tbody></table></div><div class="pagination-footer"><button class="ghost small" id="loadMoreImages" onclick="loadImages(false)" hidden>Tải thêm ảnh</button><span id="imagePageInfo"></span></div></section>
+<section class="view" id="labeling"><div class="two-col"><div class="panel config-panel"><div class="panel-head"><div><h3>Cấu hình inference</h3><p>Chọn checkpoint cục bộ; dữ liệu không rời máy.</p></div><span class="step">01 / CONFIG</span></div><label class="field"><span>YOLO26 detection checkpoint <b class="req">*</b></span><div class="input-with-btn"><input id="yoloPath" value="" placeholder="models/best.pt (hoặc đường dẫn trên máy của bạn)"><button class="mini" onclick="checkModel()">Kiểm tra</button></div><small id="modelStatus" class="hint">Đặt checkpoint trong models/best.pt hoặc chọn đường dẫn bất kỳ trên máy hiện tại.</small></label><div class="model-pair"><label class="field"><span>Grounding DINO <i>tùy chọn</i></span><input id="dinoPath" value="" placeholder="Đường dẫn model + processor local"><small>Chỉ tải từ thư mục cục bộ, không tự tải cloud.</small></label><label class="field"><span>Segment Anything <i>tùy chọn</i></span><input id="samPath" value="" placeholder="Đường dẫn SamModel + processor local"><small>Mask là gợi ý hình học; không xác nhận class.</small></label></div><label class="field"><span>Thiết bị chạy AI</span><select id="deviceSelect"><option value="auto">Auto – ưu tiên GPU tương thích, lỗi GPU sẽ thử CPU</option><option value="cpu">CPU – hoạt động trên máy không có GPU</option><option value="cuda">CUDA/ROCm – yêu cầu GPU được PyTorch hỗ trợ</option><option value="mps">MPS – Apple Silicon</option></select><small>CPU tương thích rộng nhưng DINO/SAM có thể rất chậm. Để Auto tự lựa chọn trên mỗi máy.</small></label><div class="field"><span>Processing mode</span><div class="mode-cards"><label class="mode"><input type="radio" name="mode" value="standard" checked><span><b>Standard</b><small>Một lượt YOLO</small></span></label><label class="mode"><input type="radio" name="mode" value="cpu_fast"><span><b>CPU fast</b><small>640 px – máy yếu</small></span></label><label class="mode"><input type="radio" name="mode" value="small_object"><span><b>Small object</b><small>Tile chồng lấp</small></span></label><label class="mode"><input type="radio" name="mode" value="high_accuracy"><span><b>High accuracy</b><small>Độ phân giải cao</small></span></label></div></div><div class="slider-row"><label class="field"><span>DINO box threshold <b id="dinoBoxValue">0.28</b></span><input type="range" id="dinoBox" min="0.05" max="0.9" step="0.01" value="0.28" oninput="dinoBoxValue.textContent=this.value"></label><label class="field"><span>DINO text threshold <b id="dinoTextValue">0.25</b></span><input type="range" id="dinoText" min="0.05" max="0.9" step="0.01" value="0.25" oninput="dinoTextValue.textContent=this.value"></label></div><div class="slider-row"><label class="field"><span>YOLO confidence <b id="confValue">0.25</b></span><input type="range" id="conf" min="0.05" max="0.9" step="0.01" value="0.25" oninput="confValue.textContent=this.value"></label><label class="field"><span>Matching IoU <b id="iouValue">0.40</b></span><input type="range" id="matchIou" min="0.2" max="0.9" step="0.01" value="0.4" oninput="iouValue.textContent=Number(this.value).toFixed(2)"></label></div><label class="toggle-row"><span><b>Auto-accept high agreement</b><small>Chỉ bật cho class đồng thuận và không có cảnh báo hình học.</small></span><input type="checkbox" id="autoAccept"><i></i></label><label class="toggle-row"><span><b>Chấp nhận YOLO-only (tùy chọn)</b><small>Dành cho chạy không có Grounding DINO; nhãn chưa được kiểm chứng. Không bật nếu cần tập nhãn chất lượng cao.</small></span><input type="checkbox" id="acceptYoloOnly"><i></i></label>
+<div style="margin-top:14px;padding:14px;background:#141922;border:1px solid #283344;border-radius:8px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <div>
+      <b style="font-size:12px;color:var(--mint);">📁 Thư mục lưu nhãn trực tiếp (Gán tới đâu lưu tới đó)</b>
+      <p style="font-size:10px;color:var(--muted);margin:2px 0 0;">Mỗi ảnh xử lý xong sẽ lập tức ghi file nhãn .txt chuẩn YOLO và copy ảnh sang thư mục đích</p>
+    </div>
+    <span class="live-chip">REAL-TIME AUTO SAVE</span>
+  </div>
+  <label class="field">
+    <span>Đường dẫn thư mục lưu kết quả gán nhãn</span>
+    <input id="autoSavePath" placeholder="Ví dụ: ~/autolabel_output hoặc D:\autolabel_output">
+    <small class="hint">Tệp ảnh và file nhãn .txt chuẩn YOLO sẽ được ghi trực tiếp vào đây theo thời gian thực. Dừng hay hủy giữa chừng dữ liệu đã gán vẫn còn nguyên vẹn.</small>
+  </label>
+</div>
+<div style="margin-top:16px;padding:16px;background:#141922;border:1px solid #283344;border-radius:8px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <div>
+      <b style="font-size:13px;">Tiến trình & Điều khiển gán nhãn</b>
+      <p style="font-size:10px;color:var(--muted);margin:2px 0 0;">Theo dõi và điều khiển dừng / hủy tiến trình trực tiếp tại đây</p>
+    </div>
+    <span id="labelingStateChip" class="state-chip">IDLE</span>
+  </div>
+  <div class="job-progress">
+    <div class="progress-line"><span id="labelingProgressBar"></span></div>
+    <div class="progress-meta"><span id="labelingProgressText">Chưa có job</span><b id="labelingProgressPct">0%</b></div>
+  </div>
+  <div class="current-file" style="margin:10px 0;">
+    <div class="file-ico">◷</div>
+    <div><small>ĐANG XỬ LÝ</small><b id="labelingCurrentFile">—</b></div>
+  </div>
+  <div class="job-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+    <button class="primary" id="btnStartAutoLabel" onclick="startJob()">🚀 Bắt đầu gán nhãn</button>
+    <button class="ghost small" onclick="jobAction('pause')">⏸ Tạm dừng</button>
+    <button class="ghost small" onclick="jobAction('resume')">▶ Tiếp tục</button>
+    <button class="ghost small" onclick="jobAction('stop')">⏹ Dừng an toàn</button>
+    <button class="danger small" onclick="cancelJob()">✕ Hủy job</button>
+  </div>
+  <div id="startMessage" class="hint" style="margin-top:8px;"></div>
+</div></div><div class="panel hardware-panel"><div class="panel-head"><div><h3>Thiết bị & model</h3><p>Thông tin đọc trực tiếp từ máy đang chạy</p></div><span class="live-chip">● SYSTEM</span></div><div class="device-card"><div class="gpu-symbol">▤</div><div><small>GPU ACCELERATION</small><h4 id="hardwareGpu">Đang kiểm tra…</h4><span id="hardwareCuda" class="device-state">—</span></div></div><div class="resource"><div><span>VRAM sử dụng</span><b id="hardwareVram">—</b></div><div class="progress-line"><span id="vramBar"></span></div></div><div class="resource"><div><span>RAM sử dụng</span><b id="hardwareRam">—</b></div><div class="progress-line"><span id="ramBar"></span></div></div><div class="model-list"><div><span>YOLO26</span><b id="loadedYolo">Chưa tải</b></div><div><span>Grounding DINO</span><b id="loadedDino">Chưa cấu hình</b></div><div><span>SAM</span><b id="loadedSam">Chưa cấu hình</b></div></div><div class="warning-box"><b>Chú ý checkpoint</b><p>Best.pt được kiểm tra theo tên class, không giả định ID class khớp. Model phải có đủ bus, car, container, motorcycle, truck.</p></div></div></div></section>
+<section class="view" id="traffic"><div class="panel import-panel"><div class="panel-head"><div><h3>Camera ROI & hiệu chuẩn</h3><p>ROI polygon dùng tọa độ chuẩn hóa 0–1. Thiếu ROI hoặc ngưỡng riêng camera thì nhãn giữ trạng thái cần review.</p></div><span class="step">TRAFFIC STATE</span></div><div class="form-row"><label class="field"><span>Camera ID</span><input id="cameraId" value="default"></label><button class="ghost" onclick="loadCameraConfig()">Tải cấu hình</button></div><label class="field"><span>ROI + ngưỡng hiệu chuẩn camera (JSON)</span><textarea id="cameraConfig" rows="8">{"rois":[{"name":"road","type":"road","status":"confirmed","polygon":[[0.05,0.2],[0.95,0.2],[0.98,0.98],[0.02,0.98]]}],"calibration":{"free_max":5,"busy_max":12,"queue_min":13,"jam_min":22},"calibration_confirmed":false}</textarea><small>Ví dụ trên chỉ là mẫu cấu hình, chưa được hiệu chuẩn cho camera của bạn. Hãy chỉnh ROI/ngưỡng theo dữ liệu đã xác minh trước khi xác nhận calibration.</small></label><div class="form-row"><button class="ghost" onclick="saveCameraConfig()">Lưu ROI & cấu hình</button><button class="primary" onclick="runTrafficAnalysis()">Phân tích trạng thái giao thông</button><button class="ghost" onclick="exportClassification()">Export classification (nhãn đã duyệt)</button><button class="ghost" onclick="exportTraffic()">Export extended TCN CSV</button><button class="ghost" onclick="loadTraffic()">Làm mới bảng</button></div><div id="trafficMessage" class="hint">Road occupancy theo mask chưa khả dụng; box area được báo riêng dưới dạng proxy.</div></div><div class="section-head"><div><h3>Classification review</h3><p>Những nhãn pseudo chưa xác minh không được coi là ground truth.</p></div></div><div class="panel table-wrap"><table><thead><tr><th>ẢNH / CAMERA</th><th>XE TRONG ROI</th><th>OCCUPANCY PROXY</th><th>ĐỀ XUẤT</th><th>TRẠNG THÁI / REVIEW</th></tr></thead><tbody id="trafficRows"><tr><td colspan="5" class="empty">Chạy phân tích để tạo feature và đưa trường hợp thiếu bằng chứng vào hàng review.</td></tr></tbody></table></div></section><section class="view" id="review"><div class="editor-layout"><div class="panel canvas-panel"><div class="panel-head"><div><h3>AI annotation editor</h3><p id="editorFile">Chọn ảnh trong danh sách Review queue</p></div><div class="canvas-tools"><button class="iconbtn" onclick="undo()" title="Undo">↶</button><button class="iconbtn" onclick="redo()" title="Redo">↷</button><button class="iconbtn" onclick="fitCanvas()" title="Fit">⌗</button><button class="iconbtn" onclick="newBox()" title="Vẽ box">＋</button></div></div><div class="canvas-stage"><canvas id="canvas"></canvas><div id="canvasEmpty" class="canvas-empty"><div>⌗</div><b>Chọn ảnh để review</b><span>Bounding box và nguồn AI sẽ hiển thị tại đây</span></div></div><div class="canvas-footer"><span id="canvasDimensions">—</span><div><button class="ghost small" onclick="prevImage()">← Trước</button><button class="ghost small" onclick="nextImage()">Tiếp →</button><button class="primary small" onclick="saveReview()">Lưu review</button></div></div></div><aside class="panel review-side"><div class="panel-head"><div><h3>Review queue</h3><p id="queueCount">0 ảnh</p></div><button class="ghost small" onclick="showView('dataset')">Tất cả ảnh</button></div><div id="queueList" class="queue-list"></div><button class="ghost small queue-more" id="queueMore" onclick="loadQueue(false)" hidden>Tải thêm ảnh review</button><div class="annotation-list-head"><span>ANNOTATIONS</span><span id="annCount">0</span></div><div id="annotationList" class="annotation-list"></div><div class="legend"><button class="ghost small" id="yoloToggle" onclick="toggleLayer('yolo')">YOLO: on</button><button class="ghost small" id="dinoToggle" onclick="toggleLayer('dino')">DINO: on</button><button class="ghost small" id="finalToggle" onclick="toggleLayer('final')">Final labels: on</button><button class="ghost small" id="maskToggle" onclick="toggleMasks()">SAM masks: off</button></div><div class="keyboard-hint"><b>Phím tắt</b><p><kbd>1</kbd> bus　<kbd>2</kbd> car　<kbd>3</kbd> container　<kbd>4</kbd> moto　<kbd>5</kbd> truck</p><p><kbd>Del</kbd> xóa　<kbd>Ctrl Z/Y</kbd> undo/redo　<kbd>← →</kbd> ảnh</p><p><kbd>Wheel</kbd> zoom　<kbd>Space + drag</kbd> pan　<kbd>Ctrl S</kbd> lưu</p></div></aside></div></section>
+<section class="view" id="export"><div class="export-hero"><div class="export-mark">⇧</div><div><div class="eyebrow">DATASET DELIVERY</div><h2>Export YOLO detection dataset</h2><p>Chỉ xuất nhãn đã được chấp nhận. Ảnh được sao chép vào snapshot mới; dữ liệu gốc không bị thay đổi.</p></div></div><div class="export-grid"><article class="panel"><div class="panel-head"><div><h3>Export configuration</h3><p>Chia train / val cố định theo SHA-256</p></div><span class="step">02 / EXPORT</span></div><label class="field"><span>Tên dataset export</span><input id="exportName" value="traffic_vehicles_v1"></label>
+<label class="field" style="margin-top:14px;">
+  <span>Đường dẫn thư mục lưu dataset xuất ra (Tùy chọn)</span>
+  <input id="customExportPath" placeholder="Ví dụ: ~/exports hoặc D:\exports (để trống sẽ lưu mặc định)">
+  <small class="hint">Nhập đường dẫn bất kỳ trên máy chủ để lưu trực tiếp dataset đã xuất.</small>
+</label><div class="export-split"><div><b>80%</b><span>Train target</span></div><div><b>20%</b><span>Validation target</span></div><small>Tỷ lệ thực tế có thể chênh lệch nhẹ theo hash ảnh.</small></div><button class="primary wide" onclick="exportData()">Tạo snapshot dataset <span>→</span></button><div id="exportResult" class="hint"></div></article><article class="panel export-check"><h3>Trước khi xuất</h3><div class="checkrow"><i>✓</i><span>Ảnh gốc không bị ghi đè</span></div><div class="checkrow"><i>✓</i><span>data.yaml sinh theo thứ tự class chuẩn</span></div><div class="checkrow"><i>✓</i><span>Chỉ nhãn accepted được đóng gói</span></div><div class="checkrow"><i>✓</i><span>manifest.json ghi đường dẫn nguồn và số nhãn</span></div><div class="class-tags"><span>0 bus</span><span>1 car</span><span>2 container</span><span>3 motorcycle</span><span>4 truck</span></div></article></div><div class="notice"><span>ⓘ</span><div><b>Review trước khi train.</b><p>Grounding DINO và YOLO có thể cùng sai; nhãn đồng thuận vẫn là pseudo-label. SAM chỉ hỗ trợ kiểm tra geometry. Hãy kiểm tra class conflict, đối tượng bỏ sót và ảnh nhỏ.</p></div></div></section>
+<footer>AutoLabel AI Studio <span>Local-first · Không tải ảnh lên cloud</span></footer></main></div><div id="toast" class="toast"></div><script src="/app.js?v=20261022_5"></script>
+<script>
+window.cancelJob = async function() {
+  if (!confirm('Bạn có chắc chắn muốn HỦY BỎ tiến trình gán nhãn đang chạy không?')) return;
+  try {
+    const res = await fetch('/api/jobs/cancel', {method: 'POST'});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (typeof toast === 'function') toast('Đã hủy job thành công!');
+    else alert('Đã hủy job thành công!');
+    if (typeof refreshAll === 'function') refreshAll();
+  } catch(e) {
+    alert('Lỗi hủy job: ' + e.message);
+  }
+};
+
+window.clearDataset = async function() {
+  if (!confirm('CẢNH BÁO: Bạn có chắc chắn muốn xóa sạch toàn bộ danh sách ảnh và nhãn cũ để tải thư mục mới không?')) return;
+  try {
+    const res = await fetch('/api/datasets/clear', {method: 'POST'});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (typeof toast === 'function') toast('Đã làm mới project thành công!');
+    else alert('Đã làm mới project thành công!');
+    if (typeof loadImages === 'function') loadImages();
+    if (typeof refreshAll === 'function') refreshAll();
+  } catch(e) {
+    alert('Lỗi xóa dataset: ' + e.message);
+  }
+};
+
+window.confirmCancelJob = window.cancelJob;
+window.confirmClearDataset = window.clearDataset;
+</script>
+
+</body></html>
