@@ -1,0 +1,44 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# AI models
+*.pt
+*.pth
+*.onnx
+*.tflite
+*.safetensors
+*.ckpt
+checkpoints/
+
+# Dataset
+datasets/
+data_detec/
+images/
+labels/
+
+# Runtime data
+workspace/
+backups/
+runs/
+outputs/
+exports/
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.log
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# IDE
+.vscode/
+.idea/

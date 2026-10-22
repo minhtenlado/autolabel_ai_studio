@@ -1,0 +1,10 @@
+.venv
+__pycache__
+**/__pycache__
+workspace
+checkpoints
+models
+frontend_backup
+backend_backup
+setup.log
+*.zip
