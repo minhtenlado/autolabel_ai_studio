@@ -1,116 +1,153 @@
-# AutoLabel AI Studio 0.3 – chạy trên CPU hoặc GPU
+# AutoLabel AI Studio 0.4
 
-Ứng dụng gán nhãn ảnh giao thông local-first (FastAPI + SQLite + giao diện trình duyệt): YOLO detection, tùy chọn Grounding DINO để đối chiếu và SAM để gợi ý mask/box. Có import ảnh, rà soát thủ công, xuất YOLO Detection và trạng thái giao thông/Classification đã kiểm chứng. **Không cần GPU để mở giao diện; để tự động nhận diện phải cài PyTorch, Ultralytics và cung cấp trọng số YOLO phù hợp.**
+Ứng dụng gán nhãn ảnh giao thông chạy cục bộ: **FastAPI + SQLite + giao diện tiếng Việt**. Quy trình Nhập ảnh → Gán nhãn AI → Kiểm duyệt → Xuất dataset. Giữ kiến trúc nhẹ, không cần Node/build frontend và không cần GPU để quản lý, sửa nhãn hoặc xuất dữ liệu.
 
-## 1. Cài đặt sạch trên máy mới
+**Bản 0.4 tập trung vào trải nghiệm sử dụng và tính đúng của dữ liệu.** Có editor mới, dark mode, điều hướng mobile, import nền, thumbnail, phát hiện tab review cũ, xác nhận negative, job tiếp tục được, ROI trực quan, export snapshot/ZIP và lịch sử. Không bao gồm trọng số `best.pt`; không tuyên bố tăng độ chính xác AI khi chưa đánh giá checkpoint trên tập chuẩn.
 
-**Khuyến nghị:** Python **3.11 hoặc 3.12** (hỗ trợ 3.10–3.13 theo bản wheel của thư viện), kết nối Internet lúc cài đặt và tải trọng số. Dùng bản Python 64-bit trên Windows/macOS/Linux. RAM tối thiểu thực tế phụ thuộc kích thước checkpoint; để chạy DINO/SAM cùng YOLO cần nhiều RAM hơn đáng kể.
+- [Form nâng cấp đã thực thi](docs/UPGRADE_PROMPT_V04_VI.md)
+- [Phân tích mã, kết quả và giới hạn kiểm thử](docs/AUDIT_V04_VI.md)
+- [Nâng cấp từ 0.3 và thay đổi API](docs/UPGRADE_GUIDE_V04_VI.md)
+- [Kiến trúc](docs/architecture.md) · [Changelog](CHANGELOG.md)
 
-### Windows (PowerShell / CMD)
+## Cài và chạy
 
-Mở thư mục ZIP đã giải nén, chạy:
+Dùng Python **3.11 hoặc 3.12**, 64-bit. Installer cho phép 3.10–3.13; khả năng cài AI còn phụ thuộc wheel/driver. Cần Internet lúc cài dependency hoặc tải model, sau đó ứng dụng dùng ảnh và checkpoint trên máy.
+
+### Windows
 
 ```bat
-setup.bat --mode auto
+setup.bat --mode web
 run.bat
 ```
 
-Nếu không có `py`, dùng `python install.py --mode auto` rồi `.venv\Scripts\python.exe launch.py`.
+Nếu không có `py`: `python install.py --mode web`, rồi `.venv\Scripts\python.exe launch.py`.
 
-### Linux / Ubuntu
-
-```bash
-cd autolabel_ai_studio
-chmod +x setup.sh run.sh stop.sh
-./setup.sh --mode auto
-./run.sh
-```
-
-Hoặc chạy foreground (hiện lỗi trực tiếp): `./.venv/bin/python launch.py`. Nếu thiếu venv trên Ubuntu: `sudo apt install python3-venv`.
-
-### macOS (Intel / Apple Silicon)
+### Linux / macOS
 
 ```bash
-python3 install.py --mode auto
+python3 install.py --mode web
 .venv/bin/python launch.py
 ```
 
-Trình duyệt truy cập **http://127.0.0.1:8000**. API docs: **http://127.0.0.1:8000/docs**. Để dừng: `Ctrl+C` khi chạy foreground; Linux `./stop.sh` nếu chạy nền. Windows đóng cửa sổ `run.bat` hoặc Ctrl+C.
+Mở **http://127.0.0.1:8000**. API docs: **http://127.0.0.1:8000/docs**. Dừng bằng Ctrl+C. Linux có thêm `./run.sh` / `./stop.sh` để chạy nền; dùng launcher foreground khi cần xem lỗi.
 
-### Các chế độ cài đặt
+| Chế độ cài | Chức năng |
+|---|---|
+| `python install.py --mode web` | Quản lý ảnh, review, ROI, xuất dữ liệu; không cài Torch |
+| `python install.py --mode cpu` | Thêm YOLO/Torch CPU |
+| `python install.py --mode auto` | Chọn bản Torch theo môi trường; kiểm tra accelerator sau cài |
+| `python install.py --mode gpu` | Cài Torch từ PyPI; cần driver tương thích |
+| `python install.py --mode auto --optional` | Thêm dependency cho Grounding DINO / SAM |
+| `python install.py --mode gpu --torch-index URL` | Chỉ định index PyTorch phù hợp CUDA/ROCm |
 
-| Lệnh | Tính năng | Khi nào sử dụng |
-|---|---|---|
-| `python install.py --mode web` | FastAPI/UI/nhãn thủ công/export, không cài Torch | Máy yếu, chỉ rà soát ảnh |
-| `python install.py --mode cpu` | YOLO bằng CPU, Torch CPU trên Windows/Linux | Máy không GPU hoặc driver không tương thích |
-| `python install.py --mode auto` | GPU NVIDIA nếu thấy `nvidia-smi`, ngược lại CPU; Apple MPS nếu torch hỗ trợ | Lựa chọn mặc định |
-| `python install.py --mode gpu` | Dùng bản PyTorch từ PyPI, kiểm tra CUDA sau khi cài | Máy GPU đã có driver phù hợp |
-| `python install.py --mode auto --optional` | Thêm Transformers + thư viện DINO/SAM | Máy đủ RAM, muốn kiểm tra chéo |
-| `python install.py --mode gpu --torch-index URL` | Tự chọn index PyTorch tương thích driver CUDA/ROCm | NVIDIA driver cụ thể hoặc AMD ROCm |
+Có GPU vật lý không đảm bảo Torch dùng được GPU. `Auto` chọn accelerator khả dụng; YOLO có fallback CPU với các lỗi accelerator được nhận diện. Chạy `.venv/bin/python -m scripts.doctor` để xem tình trạng thực tế; Windows dùng `.venv\Scripts\python.exe`.
 
-**Quan trọng:** có GPU vật lý không có nghĩa PyTorch sử dụng được GPU đó. AMD ROCm chỉ hoạt động trên hệ điều hành/card được bản torch ROCm hỗ trợ; Apple Silicon dùng MPS khi tương thích. Không thể đảm bảo chạy AI trên **mọi** CPU/OS/kiến trúc, ví dụ máy 32-bit hoặc Python không có wheel. Chạy `python -m scripts.doctor` bằng Python của `.venv` để xem chính xác tình trạng thiết bị; nếu GPU driver bị lỗi trong lúc suy luận và device là `auto`, YOLO sẽ thử lại trên CPU.
+## Dùng theo từng bước
 
-## 2. Mô hình và dữ liệu cần cung cấp
+### 1. Nhập ảnh
 
-1. Đặt checkpoint YOLO detection huấn luyện của bạn tại **`models/best.pt`** (hoặc nhập đường dẫn đầy đủ trên **máy đang chạy server**). Tên class trong checkpoint phải khớp: `bus`, `car`, `container`, `motorcycle`, `truck`. ZIP này **không** bao gồm best.pt.
-2. Không bắt buộc phải có DINO/SAM. Với máy CPU, hãy bắt đầu chỉ dùng YOLO (để trống 2 trường tùy chọn) và chế độ **CPU fast (640 px)** hoặc Standard (960 px), sau đó tăng dần nếu bỏ sót xe nhỏ.
-3. Nếu muốn Grounding DINO / SAM, cài `--optional` rồi dùng `./.venv/bin/python scripts/download_models.py` (Linux/macOS), hoặc `.venv\Scripts\python.exe scripts\download_models.py` (Windows). Mạng được sử dụng **chỉ** để cài package / tải weights khi bạn chạy các lệnh này; inference cục bộ sau đó.
-4. **Các file model.safetensors trong ZIP nguồn bị cắt cụt còn 2 MiB mỗi file**, không phải trọng số hợp lệ. Chúng đã được **loại khỏi bản này**, không sử dụng, không giả làm inference. Script tải model có kiểm tra cấu trúc/độ dài tensor khi tải xong. Trọng số chính thức có thể tổng cộng trên 1 GiB.
-5. Ở mục `Dataset` nhập thư mục chứa ảnh nằm **trên chính máy chạy backend**, không phải đường dẫn máy đang mở trình duyệt từ xa. Các thư mục `images/` và `labels/` YOLO hiện có được tự nhận diện.
+Nhập đường dẫn thư mục **trên máy chạy backend**. Hỗ trợ JPG/JPEG/PNG/WebP/BMP, quét thư mục con, đọc cả cấu trúc `images/train/camera` → `labels/train/camera`. Nút **Thay thế dataset** cần xác nhận; đường dẫn sai, không có ảnh đọc được hoặc YAML lỗi không xóa dữ liệu cũ. DB được sao lưu trước thay thế.
 
-## 3. Workflow
+- Kiểm tra ảnh đầy đủ, SHA-256 và từng dòng nhãn YOLO detection 5 cột. Lỗi hiện trong Nhật ký; ảnh có nhãn lỗi cần review trước export.
+- Nếu có `data.yaml` / `dataset.yaml` / `data.yml` ở thư mục nhập hoặc tổ tiên gần nhất, đọc trường `names` và đổi ID sang schema `bus, car, container, motorcycle, truck`. Class ngoài schema được báo lỗi, không đổi ngầm. Nếu không có YAML thì dùng đúng thứ tự 5 lớp này.
+- Mặc định bỏ ảnh trùng nội dung. Bật **Giữ ảnh trùng nội dung** cho chuỗi traffic cần frame ở nhiều thời điểm; cùng đường dẫn không được nhập hai lần.
+- Camera lấy từ thư mục con đầu tiên, bỏ các cấp `images/train/val/valid/test`. Timestamp đọc từ tên dạng `YYYYMMDD_HHMMSS`, `YYYYMMDD-HHMMSS` hoặc `YYYYMMDDTHHMMSS`; thiếu thì giữ rỗng, không tự bịa thời gian.
+- Ảnh có EXIF orientation được hiển thị/xuất theo cùng hướng chuẩn hóa. Nhãn nhập cần tương ứng ảnh hiển thị. Một YAML được áp dụng cho toàn bộ lượt nhập; tách lượt nhập nếu nhiều dataset có schema khác nhau.
+- Nhãn `.txt` rỗng chưa phải negative đã kiểm chứng. File nguồn luôn được giữ nguyên.
 
-- **Import**: JPG/JPEG/PNG/WebP/BMP theo thư mục; loại trùng hash SHA-256, không đổi file nguồn. Camera ID từ thư mục cha; timestamp được suy ra từ tên file theo dạng `YYYYMMDD_HHMMSS` nếu có.
-- **Model check**: lựa chọn `Auto`, `CPU`, `CUDA/ROCm` hoặc `MPS`. Auto ưu tiên accelerator khả dụng theo torch; nếu không có sẽ chạy CPU. Nếu ép CUDA/MPS không khả dụng, trả lỗi rõ ràng.
-- **Auto label**: chạy YOLO; DINO/SAM tùy chọn. YOLO-only thường được gắn `needs_review`, không tự nhận là nhãn chuẩn.
-- **Acceptance**: mặc định `auto_accept` tắt. `Auto-accept high agreement` chỉ nhận detection đồng thuận đạt điều kiện; KHÔNG tự động chấp nhận nhãn mâu thuẫn/high risk. Có thêm checkbox **YOLO-only unverified** nếu chủ động chấp nhận rủi ro của nhãn một mô hình, không nên bật để tạo ground truth khoa học.
-- **Review**: mở ảnh, thao tác box, phím 1–5 để gán lớp, Delete, Ctrl+Z/Y, kéo pan, scroll zoom, Ctrl+S lưu review vào SQLite với lịch sử sửa đổi.
-- **Save while running** (`output_dir`): tên file thêm ID ảnh tránh hai camera trùng tên. Chỉ ghi **nhãn accepted** vào `.txt`; nếu chưa duyệt thì file nhãn rỗng. Đây là thư mục kết quả trung gian, không phải gold set.
-- **Export**: xuất snapshot `workspace/exports/`, tạo `images/{train,val}`, `labels/{train,val}`, `data.yaml`, `manifest.json`, chỉ xuất accepted=1. Các trường hợp trạng thái giao thông/calibration đều là gợi ý cần review.
+Import chạy nền và báo số ảnh quét/thêm/trùng/lỗi. Giao diện phân trang 48 ảnh, thumbnail nhẹ, tìm kiếm có debounce và bộ lọc trạng thái/rủi ro/lỗi.
 
-## 4. Chạy từ xa / cấu hình
+### 2. Gán nhãn AI
 
-Server mặc định chỉ bind **127.0.0.1** để tránh API ghi/xóa dữ liệu không xác thực bị lộ ra LAN/WAN. Trên máy khác, kết nối **SSH tunnel** đến máy chạy app:
+Đặt checkpoint **YOLO detection** tại `models/best.pt`, hoặc chọn đường dẫn của bạn. Model phải có các tên class `bus`, `car`, `container`, `motorcycle`, `truck`; checkpoint classification/segmentation không được dùng thay detection.
 
-```bash
-ssh -L 8000:127.0.0.1:8000 user@YOUR_HOST
-```
+Chọn thiết bị và preset: CPU fast (640), Standard (960), Small object (tiles), High accuracy (1280). Kiểm tra model trước khi chạy. DINO/SAM là tùy chọn; tải weights hợp lệ bằng `scripts/download_models.py` sau khi cài dependency tùy chọn. Bản nguồn chỉ có `models/README.txt`, không kèm weights.
 
-Rồi truy cập `http://127.0.0.1:8000`. Không public port 8000 lên Internet.
+Mặc định proposal cần review. Auto-accept YOLO + DINO đồng thuận hoặc YOLO-only là **opt-in pseudo-label**, không trở thành ground truth chỉ vì score cao. SAM gợi ý hình học, không xác nhận đúng lớp.
 
-Biến môi trường:
+Job lưu danh sách ảnh và commit sau từng ảnh. Tạm dừng/dừng/hủy có hiệu lực ở ranh giới ảnh, không ngắt inference đang chạy. **Dừng an toàn** cho phép tiếp tục cùng job; **Hủy job** kết thúc phần còn lại và giữ kết quả đã lưu. Resume chỉ chạy phần chưa hoàn tất/lỗi, không làm progress vượt 100%. Khi khởi động lại, job bị gián đoạn trở về trạng thái có thể tiếp tục.
 
-- `AUTOLABEL_DATA_DIR`: đổi nơi lưu SQLite, masks, exports và lịch sử.
-- `AUTOLABEL_YOLO_MODEL`: checkpoint YOLO mặc định.
-- `AUTOLABEL_DEVICE=auto|cpu|cuda|mps`: device mặc định; chọn riêng trong UI ưu tiên hơn biến môi trường.
-- `AUTOLABEL_CPU_THREADS`: đặt số luồng CPU cho Torch (mặc định số CPU - 1, tối đa 8).
-- `AUTOLABEL_PORT`: port backend (mặc định 8000).
-- `AUTOLABEL_HOST`: mặc định loopback. Nếu cần bind rộng phải **tự bật** `AUTOLABEL_INSECURE_REMOTE=1` và đặt reverse proxy/VPN/auth phù hợp; không khuyến nghị.
+Nếu bật lưu proposal liên tục, thư mục `job_N/` chứa ảnh và **JSON**, không tạo nhãn YOLO rỗng cho ảnh chưa duyệt. Mặc định cập nhật đặc trưng traffic sau detection; có thể tắt trong tùy chọn nâng cao.
 
-### Docker CPU (chỉ khi muốn container)
+### 3. Kiểm duyệt
+
+Mở ảnh từ thư viện/hàng chờ. Vẽ box mọi hướng, kéo hoặc thay đổi kích thước, sửa lớp và acceptance. Có lớp YOLO/DINO/SAM để đối chiếu, undo/redo, lịch sử, lưu bản đang sửa, lưu xác nhận và lưu & ảnh tiếp.
+
+| Phím trong editor | Thao tác |
+|---|---|
+| B / V / F | Vẽ / chọn / fit ảnh |
+| Space + kéo / cuộn | Pan / zoom |
+| 1–5 | Đổi lớp box đang chọn |
+| Delete / Backspace | Xóa box chọn |
+| Ctrl/Cmd+Z; Ctrl/Cmd+Y hoặc Shift+Z | Undo; redo |
+| Ctrl/Cmd+S | Lưu và xác nhận ảnh |
+| ← / → | Ảnh trước / tiếp |
+
+Rời ảnh có sửa đổi sẽ hỏi giữ hay bỏ; chọn bỏ khôi phục trạng thái đã lưu. Muốn xác nhận negative, loại tất cả box accepted rồi bật **Tôi xác nhận ảnh không có xe**. Hai tab cùng sửa một ảnh: tab cũ nhận 409 và giữ chỉnh sửa cục bộ, để người dùng tải lại/quyết định; không ghi đè ngầm. Metadata model được giữ khi sửa.
+
+### 4. Traffic & ROI
+
+Chọn camera, vẽ vùng đường/vùng loại trừ trên ảnh, đặt `free_max ≤ busy_max < jam_min`, rồi xác nhận hiệu chuẩn theo dữ liệu camera. Có JSON nâng cao cho cấu hình đã có. Chạy phân tích nền, xem các gợi ý và xác nhận/loại nhãn classification.
+
+Nhãn theo ngưỡng là **gợi ý theo luật**, chưa phải mô hình classifier đã huấn luyện. Box đã bị người duyệt bác bỏ không được đếm. Nhãn người xác nhận được giữ nhất quán khi phân tích lại. Review detection hoặc đổi ROI đánh dấu đặc trưng cũ; phải phân tích lại trước khi xuất CSV.
+
+### 5. Xuất dataset
+
+| Kiểu | Nội dung / chính sách mặc định |
+|---|---|
+| YOLO Detection | Ảnh đã duyệt đầy đủ (kể cả negative), hoặc ảnh có toàn bộ nhãn nhập hợp lệ. Không xuất một phần proposal accepted gây thiếu ground truth |
+| Classification | Chỉ nhãn người đã xác nhận. Pseudo-label theo luật cần bật riêng |
+| Traffic CSV | Toàn bộ bản ghi có timestamp, không giới hạn ngầm 2.000 hàng; giữ provenance/trạng thái review và báo số bỏ qua |
+
+Mỗi lần xuất tạo **thư mục riêng + ZIP + manifest + lịch sử**, không ghi đè bản cũ. Thư mục tùy chọn là thư mục cha, snapshot được tạo bên trong. Chuẩn bị dung lượng cho cả ảnh copy và ZIP.
+
+Detection/classification mặc định chia nhóm camera/ngày; các nhóm có ảnh trùng SHA-256 được gộp để tránh trùng nội dung train/val. Thiếu timestamp sẽ fallback hash và cảnh báo. Chỉ một nhóm thì toàn bộ vào train, val rỗng có cảnh báo. Tỷ lệ val là tỷ lệ **nhóm**, không đảm bảo đúng tỷ lệ số ảnh hay cân bằng class. Cách chia này chưa loại trừ mọi dạng rò rỉ dữ liệu.
+
+## Cấu hình và chạy từ xa
+
+Server mặc định bind loopback; **một process / một workspace**. Không dùng nhiều Uvicorn workers cùng DB vì khóa điều phối nằm trong process. API chưa có đăng nhập/phân quyền nên phù hợp máy cá nhân hoặc môi trường riêng.
+
+| Biến môi trường | Ý nghĩa |
+|---|---|
+| `AUTOLABEL_DATA_DIR` | Thư mục SQLite, masks, thumbnails, backups, exports |
+| `AUTOLABEL_YOLO_MODEL` | Đường dẫn checkpoint mặc định |
+| `AUTOLABEL_DEVICE` | Thiết bị mặc định; lựa chọn UI theo job ưu tiên hơn |
+| `AUTOLABEL_CPU_THREADS` | Số luồng Torch CPU |
+| `AUTOLABEL_PORT` | Port, mặc định 8000 |
+| `AUTOLABEL_HOST` | Host, mặc định 127.0.0.1 |
+
+Truy cập máy khác qua SSH tunnel: `ssh -L 8000:127.0.0.1:8000 user@HOST`, sau đó mở localhost. Bind ngoài loopback cần opt-in `AUTOLABEL_INSECURE_REMOTE=1` và lớp bảo vệ phù hợp.
+
+Docker CPU (chưa chạy kiểm thử Docker trong đợt nâng cấp này):
 
 ```bash
 docker build -t autolabel-studio:cpu .
 docker run --rm -p 127.0.0.1:8000:8000 -v "$PWD/workspace:/app/workspace" -v "$PWD/models:/app/models:ro" -v "$PWD/dataset:/data:ro" autolabel-studio:cpu
 ```
 
-Trong giao diện container, nhập đường dẫn dataset **`/data`**. **Không** publish Docker port đến `0.0.0.0`; container bind all interfaces *bên trong* để Docker host-loopback forwarding hoạt động. Models và database **không** được tích hợp cố định vào image.
+Nhập `/data` ở giao diện container. Model/database không nhúng vào image.
 
-## 5. Kiểm tra
+## Kiểm thử và giới hạn
 
 ```bash
-# Dùng .venv/bin/python ở Linux/macOS, .venv\Scripts\python.exe ở Windows
-python -m scripts.doctor
-python -m unittest discover -s tests -v
-python -m compileall -q backend
+# Python của .venv; Windows thay bằng .venv\Scripts\python.exe
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m compileall -q backend tests
 ```
 
-Kiểm thử tự động gồm chọn device, lỗi GPU giả lập → CPU fallback, nhất quán API lưu review, gán nhãn/traffic logic. **Chưa có smoke test với checkpoint YOLO thật của người dùng**, nên không thể tuyên bố inference thực tế hoặc số ảnh/giây trên máy bạn được xác nhận. Chạy demo với ít ảnh và checkpoint hợp lệ trước khi dùng dataset lớn.
+47 unit/API/worker regression tests đã đạt trên Linux/Python 3.12.14; tests dùng DB và ảnh tạm riêng. Bao gồm migration, bad import giữ dữ liệu, class mapping, stale tab, review atomic, negative, split, 2.006 bản ghi CSV, human provenance, stop/pause/resume/restart. Worker tests dùng detector giả lập, không đo chất lượng AI.
 
-## 6. Giới hạn của bài toán
+Browser test tùy chọn cần Node + Playwright/Chromium (không cần cho người dùng ứng dụng):
 
-- DINO/SAM nặng trên CPU và có thể thiếu RAM. Không thể tăng tốc GPU nếu không có driver / torch wheel / GPU tương thích. `Auto` không tạo ra hiệu năng GPU trên máy chỉ có CPU.
-- Sai khác kiến trúc YOLO/Transformers và model checkpoint ảnh hưởng kết quả; auto label chỉ là pseudo-label, cần kiểm chứng chất lượng trên gold set.
-- Traffic pseudo-label theo threshold camera không phải ground truth; box occupancy là proxy, không phải mask-union occupancy. Chưa có learned classifier đã hiệu chuẩn, temporal resampling hoặc TCN 720/180 như mục tiêu hệ thống lớn.
-- SQLite lưu đường dẫn tuyệt đối tới ảnh nguồn. Nếu **chuyển máy**, hãy **import lại folder ảnh** hoặc dùng cùng đường dẫn/mount. Đừng copy mỗi DB rồi kỳ vọng nó tự tìm thấy ảnh trên máy mới.
-- Ứng dụng là local/private: API **chưa có xác thực người dùng**, không phù hợp triển khai public Internet nếu không có lớp xác thực/proxy.
+```bash
+npm install --no-save --package-lock=false playwright
+npx playwright install chromium
+PYTHON="$PWD/.venv/bin/python" node tests/ui_smoke.mjs
+```
+
+Có thể đặt `PLAYWRIGHT_MODULE` (đường dẫn `index.mjs`), `CHROMIUM_EXECUTABLE`, `UI_TEST_PORT`, `UI_SCREENSHOT_DIR`. Test tự chạy server/DB tạm và fixture ghi rõ SYNTHETIC; không sử dụng workspace thật. Trên PowerShell đặt `$env:PYTHON` trước khi chạy Node.
+
+**Chưa xác minh:** `best.pt` thật của người dùng, inference DINO/SAM thật, CUDA/ROCm/MPS, Windows/macOS/Docker thực tế, tải hàng chục nghìn ảnh và throughput. Chưa có benchmark chứng minh tăng độ chính xác hoặc tốc độ AI. CPU/GPU vẫn phụ thuộc model, driver và bộ nhớ.
+
+SQLite lưu đường dẫn tuyệt đối; chuyển máy cần giữ mount/đường dẫn tương ứng hoặc import lại ảnh. Không thay file ảnh nguồn sau khi import: SHA/kích thước và nhãn sẽ không tự cập nhật. Import bị ngắt giữ các batch đã commit; chạy lại cùng thư mục để nhập tiếp. Traffic occupancy chỉ là proxy từ bounding box, không phải hợp vùng mask; CSV chưa resample và chưa tương thích TCN 720/180 được kiểm chứng.

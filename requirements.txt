@@ -1,5 +1,7 @@
 # Web backend / dataset / review / exports. No AI runtime needed for WEB mode.
 fastapi>=0.115,<1
 uvicorn>=0.30,<1
-pillow>=10,<13
+pillow>=10.1,<13
+pydantic>=2.8,<3
 psutil>=5.9,<8
+PyYAML>=6,<7

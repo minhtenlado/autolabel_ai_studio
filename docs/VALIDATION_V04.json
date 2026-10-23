@@ -1,0 +1,63 @@
+{
+  "baseline_commit": "0c9400ac9cf61de5b3bf5e6ce502015870c293f1",
+  "release": "0.4.0",
+  "python": "3.12.14",
+  "platform": "Linux",
+  "dependencies": {
+    "fastapi": "0.161.1",
+    "uvicorn": "0.54.0",
+    "pydantic": "2.14.0",
+    "starlette": "1.9.0",
+    "Pillow": "12.3.0",
+    "PyYAML": "6.0.3",
+    "psutil": "7.2.2",
+    "httpx": "0.28.1"
+  },
+  "unit_api_worker": {
+    "command": "python -m unittest discover -s tests -v",
+    "tests": 47,
+    "passed": 47
+  },
+  "browser": {
+    "checks": [
+      "Empty dashboard renders with live API",
+      "Async folder import reports 12 images, duplicates and corrupt files",
+      "Debounced image search filters server data",
+      "Review loads original annotations",
+      "Canvas draws in reverse direction and undo/redo work",
+      "Unsaved changes block navigation until user decides",
+      "Review saves with version control",
+      "Stale tab conflict keeps local edits and reload recovers safely",
+      "Discarding changes restores saved state",
+      "Detection snapshot generates a downloadable ZIP",
+      "ROI drawing, calibration and background traffic analysis work",
+      "Human-verified classification exports from the UI",
+      "Theme survives reload",
+      "All 7 views remain navigable without horizontal overflow at 390 px",
+      "No browser JavaScript errors"
+    ],
+    "errors": [],
+    "browser": "153.0.8010.0",
+    "viewports": [
+      "1440x1050",
+      "390x844"
+    ],
+    "fixture": "synthetic",
+    "at": "2026-10-23T02:22:18.721Z"
+  },
+  "other_checks": [
+    "compileall backend tests launch.py install.py",
+    "node --check: all frontend modules and ui_smoke.mjs",
+    "git diff --check",
+    "documentation relative links"
+  ],
+  "limitations": [
+    "Actual YOLO/DINO/SAM weights unavailable; inference tests simulated",
+    "No real CUDA, ROCm, MPS, Windows, macOS or Docker execution",
+    "No throughput or large dataset benchmark"
+  ],
+  "notes": [
+    "Starlette emits a non-failing httpx TestClient deprecation warning in this tested environment",
+    "Browser conflict test intentionally produces HTTP 409; no unexpected JavaScript errors"
+  ]
+}

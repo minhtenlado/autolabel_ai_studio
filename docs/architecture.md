@@ -1,32 +1,39 @@
-# Kiến trúc và trạng thái module
+# Kiến trúc AutoLabel AI Studio 0.4
 
-- `backend/api`: local REST API + static UI; bind loopback trong `run.sh`.
-- `backend/database`: SQLite/WAL cho ảnh, job, annotation và audit history.
-- `backend/detection`: YOLO checkpoint validation + optional Transformers Grounding DINO/SAM.
-- `backend/consensus`: matching một-một greedy theo IoU, conflict, heuristic tier.
-- `backend/pipeline`: worker thread tuần tự, kết quả được commit theo ảnh để resume sau lỗi/restart.
-- `backend/dataset`: import, hash trùng, đọc YOLO txt, export immutable snapshot.
-- `frontend`: single-page app canvas; UI được phục vụ local bởi FastAPI.
+Một FastAPI process phục vụ REST và static `frontend/`, một SQLite WAL workspace, một inference worker tuần tự. Review và export hoạt động trong chế độ web không cần Torch. Launcher giữ bind loopback; đây chưa phải dịch vụ nhiều người dùng.
 
-Các model chỉ tải checkpoint được người dùng cấu hình từ filesystem. Dataset image path giữ nguyên trong SQLite; export copy ảnh sang snapshot riêng. `workspace/` chứa database, mask, logs và exports.
+| Module | Trách nhiệm |
+|---|---|
+| `backend/api/app.py` | Validation request, optimistic review version, điều phối mutation, API task/job/export, ảnh chuẩn EXIF và thumbnail |
+| `backend/database/store.py` | Schema v4, backup trước migration, transaction, khôi phục trạng thái job/task khi restart |
+| `backend/core/tasks.py` | Tác vụ maintenance nền/đồng bộ, progress và result bền vững trong SQLite |
+| `backend/pipeline/worker.py` | Snapshot `job_items`, checkpoint pause/stop, retry phần lỗi, bảo vệ nhãn người/gốc, JSON proposals |
+| `backend/dataset/operations.py` | Import ảnh/YOLO/YAML, dedup, backup clear, lựa chọn dữ liệu đủ điều kiện export |
+| `backend/dataset/exports.py` | Snapshot tên duy nhất, nhóm camera/ngày/hash, chống trùng SHA giữa split, ZIP registry |
+| `backend/detection/models.py` | YOLO + thiết bị/fallback; DINO và SAM tùy chọn |
+| `backend/consensus/engine.py` | Ghép IoU một-một, giữ evidence/conflict, loại geometry lỗi; không giả xác suất đúng |
+| `backend/traffic/analysis.py` | ROI/calibration, đếm xe/proxy, giữ nhãn người, stale features, classification và CSV |
+| `frontend/app.js` | Điều hướng, dashboard, cấu hình, task/job, thư viện và export |
+| `frontend/editor.js` | Canvas, review, undo/redo, dirty state, hàng chờ, phiên bản |
+| `frontend/traffic.js` | Vẽ ROI, ngưỡng camera, duyệt classification |
+| `frontend/api.js`, `theme.js` | API/error/dialog/toast, utility, theme |
 
-## Tầng quality
+## Trạng thái và tính nhất quán
 
-- `high_agreement`: detector cùng class, IoU đạt ngưỡng, geometry hợp lệ. Pseudo-label, không phải đảm bảo chính xác.
-- `needs_review`: một phía phát hiện, class ambiguous/nhỏ hoặc box có warning.
-- `high_risk`: class conflict.
+`images.status` mô tả xử lý (`pending/processing/processed/failed`). `review_state` độc lập (`unreviewed/reviewed/negative`), cùng `review_version` tăng khi inference/review thay đổi ảnh. PUT review dùng compare-and-swap trong transaction: sai version trả 409, mọi validation lỗi rollback. ID ảnh tiếp tục tăng sau clear để tab cũ không ghi vào dataset mới. Annotation giữ metadata nguồn; lịch sử ghi create/update/delete/review.
 
-`heuristic_score` chỉ để sắp xếp ưu tiên review. Không hiệu chuẩn xác suất. Auto-accept mặc định tắt và export chỉ lấy annotation `accepted=1`.
+Job gồm tổng cố định từ `job_items`. `processed + failed ≤ total`; retry chỉ đưa failed/processing về pending. Pause và stop ở ranh giới ảnh; restart đưa processing về pending, running về paused. Cancel giữ các kết quả đã commit nhưng không resume cùng job. Nhãn manual/original/ảnh đã duyệt được bảo vệ khỏi chạy lại.
 
-## Đa nền tảng (0.3)
+`JobRunner.lock` phối hợp các mutation trong process. TaskManager bật maintenance trước import/clear/export/analyze/model-check; endpoint review/ROI không ghi trong thời gian này. Worker bật maintenance khi phân tích traffic hậu kỳ. Không dùng nhiều process cho cùng workspace. SQLite foreign keys và WAL hỗ trợ đọc trong lúc xử lý, không thay thế khóa nghiệp vụ.
 
-- `install.py` dùng `venv` mới trên Windows/macOS/Linux, cho phép CPU/GPU/web-only. `setup.sh`/`setup.bat` là wrapper. Không đóng gói `.venv` hoặc dữ liệu máy cũ.
-- `backend/core/hardware.py` phát hiện CUDA/ROCm, Apple MPS và CPU; `Auto` chỉ retry CPU khi gặp lỗi GPU/VRAM đã nhận diện.
-- `scripts/doctor.py` kiểm tra môi trường và tính toàn vẹn của safetensors.
-- `launch.py` chỉ bind loopback trừ khi có opt-in rõ ràng; thay đổi môi trường qua biến `AUTOLABEL_*`.
-- `best.pt` và các weights DINO/SAM hợp lệ phải do người dùng cung cấp hoặc tải chính thức; không nhúng weights bị cắt cụt.
-- UI gửi device per job. `/api/images/{id}/review` và `/api/images/{id}/annotations` cùng xử lý lưu có kiểm tra tọa độ hợp lệ.
+## Quality và provenance
 
-## Lưu ý kiểm nghiệm
+`high_agreement`, `needs_review`, `high_risk` là tier heuristic, không phải độ tin cậy đã hiệu chuẩn. AI acceptance mặc định tắt. Lưu review gắn `human_reviewed`/`human_rejected` cho box; chỉ complete review mới đánh dấu ảnh đã duyệt. Không export một phần proposal hoặc nhãn nhập lỗi thành ground truth thiếu box.
 
-Chạy unit/integration tests trên CPU; không khẳng định CUDA/MPS/ROCm đã được smoke test thực tế.
+Traffic đếm theo tâm box nằm trong ROI đường, bỏ vùng exclusion và box human-rejected. Tổng diện tích box/diện tích ROI là **proxy**, có thể chồng lấn, không phải mask union. Calibration sinh gợi ý theo luật. Human-verified label/provenance được giữ qua phân tích lại; ROI/review đánh dấu features stale. CSV không tạo timestamp/nội suy giả và không cắt hàng theo phân trang UI.
+
+## I/O và giới hạn hiệu năng
+
+Ảnh nguồn không copy vào workspace khi import; SQLite giữ đường dẫn tuyệt đối, hash, kích thước. Thumbnail được cache 320×200, replace nguyên tử. Import quét một lần và commit từng 25 file. Export tạo thư mục riêng, validation nguồn/nhãn, copy ảnh, ghi manifest rồi ZIP; registry chỉ được ghi sau khi ZIP thành công.
+
+Phân trang giúp UI không dựng toàn bộ dataset. Import danh sách file/hash, split/export candidates, manifest và temporal CSV vẫn cần bộ nhớ theo kích thước dataset; chưa phải streaming hoàn toàn. ZIP dùng thêm dung lượng và CPU, không có nút hủy maintenance. Snapshot đã export không bị clear workspace xóa; backup DB không bao gồm ảnh nguồn. Không có authentication, cơ chế nhiều project, task queue phân tán hoặc benchmark production trong bản này.

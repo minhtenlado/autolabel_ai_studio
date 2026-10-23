@@ -32,6 +32,11 @@ exports/
 *.sqlite3-*
 *.log
 
+# Optional browser-test dependencies and output
+node_modules/
+test-results/
+playwright-report/
+
 # Secrets
 .env
 .env.*

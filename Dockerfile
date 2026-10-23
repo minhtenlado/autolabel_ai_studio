@@ -7,7 +7,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt \
   && python -m pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
   && python -m pip install --no-cache-dir -r requirements-ai.txt
 COPY backend/ ./backend/
-COPY frontend/dist/ ./frontend/dist/
+COPY frontend/ ./frontend/
 COPY launch.py ./launch.py
 EXPOSE 8000
 # Avoid mapping this unsecured API to an externally exposed/public port.

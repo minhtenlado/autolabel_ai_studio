@@ -1,210 +1,447 @@
-import hashlib, json, shutil, threading, time
+"""One inference worker with a durable, fixed job manifest."""
+
+import json
+import threading
+import time
 from pathlib import Path
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps
 from ..database.store import connect
 from ..detection.models import ModelHub
 from ..consensus.engine import match_and_score
-from ..core.config import CLASSES, IMAGE_EXTS, DATA_ROOT
-from ..traffic.analysis import analyze_all as analyze_traffic
+from ..core.config import CLASSES, DATA_ROOT
+from ..dataset.operations import copy_image
+
 
 class JobRunner:
     def __init__(self):
         self.hub = ModelHub()
         self.thread = None
+        self.job_id = None
         self.pause_event = threading.Event()
         self.stop_event = threading.Event()
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
+        self.maintenance = False
+        self.stop_target = "stopped"
+
+    def busy(self):
+        return bool(self.thread and self.thread.is_alive())
+
+    @staticmethod
+    def _counts(db, job_id):
+        counts = {
+            r["state"]: r["n"]
+            for r in db.execute(
+                "SELECT state,count(*) n FROM job_items WHERE job_id=? GROUP BY state",
+                (job_id,),
+            )
+        }
+        db.execute(
+            "UPDATE jobs SET total=?,processed=?,failed=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (
+                sum(counts.values()),
+                counts.get("processed", 0),
+                counts.get("failed", 0),
+                job_id,
+            ),
+        )
 
     def start(self, config, resume=False):
         with self.lock:
-            if self.thread and self.thread.is_alive():
-                raise RuntimeError('Đang có job chạy.')
+            if self.busy() or self.maintenance:
+                raise RuntimeError(
+                    "Đang có tác vụ. Chờ kết thúc trước khi chạy job mới."
+                )
+            with connect() as db:
+                if resume:
+                    job = db.execute(
+                        "SELECT * FROM jobs ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    if not job or job["state"] not in (
+                        "paused",
+                        "stopped",
+                        "failed",
+                        "completed_with_errors",
+                    ):
+                        raise RuntimeError(
+                            "Không có job đang tạm dừng/dừng/lỗi để tiếp tục."
+                        )
+                    job_id = job["id"]
+                    config = json.loads(job["config"])
+                    # Migration of an old job without items: reconstruct only unfinished work.
+                    if not db.execute(
+                        "SELECT 1 FROM job_items WHERE job_id=?", (job_id,)
+                    ).fetchone():
+                        db.execute(
+                            "INSERT INTO job_items(job_id,image_id) SELECT ?,id FROM images WHERE status!='processed' AND review_state='unreviewed'",
+                            (job_id,),
+                        )
+                    db.execute(
+                        "UPDATE job_items SET state='pending',error=NULL WHERE job_id=? AND state IN ('failed','processing')",
+                        (job_id,),
+                    )
+                else:
+                    ids = [
+                        r[0]
+                        for r in db.execute(
+                            "SELECT i.id FROM images i WHERE status IN ('pending','failed') AND review_state='unreviewed' AND NOT EXISTS(SELECT 1 FROM annotations a WHERE a.image_id=i.id AND (a.reviewed=1 OR a.source IN ('original','manual'))) ORDER BY i.id"
+                        )
+                    ]
+                    if not ids:
+                        raise RuntimeError(
+                            "Không có ảnh chưa xử lý. Nhập thêm ảnh hoặc kiểm tra bộ lọc lỗi."
+                        )
+                    job_id = db.execute(
+                        "INSERT INTO jobs(state,config) VALUES('running',?)",
+                        (json.dumps(config),),
+                    ).lastrowid
+                    db.executemany(
+                        "INSERT INTO job_items(job_id,image_id) VALUES(?,?)",
+                        [(job_id, iid) for iid in ids],
+                    )
+                remaining = db.execute(
+                    "SELECT count(*) FROM job_items WHERE job_id=? AND state='pending'",
+                    (job_id,),
+                ).fetchone()[0]
+                if not remaining and not (
+                    resume and config.get("analyze_traffic_after")
+                ):
+                    raise RuntimeError(
+                        "Job đã xử lý hết ảnh; không có ảnh cần tiếp tục."
+                    )
+                db.execute(
+                    "UPDATE images SET status='pending',error=NULL WHERE id IN (SELECT image_id FROM job_items WHERE job_id=? AND state='pending')",
+                    (job_id,),
+                )
+                db.execute(
+                    "UPDATE jobs SET state='running',error=NULL,current_path=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (job_id,),
+                )
+                self._counts(db, job_id)
+            self.job_id = job_id
             self.pause_event.clear()
             self.stop_event.clear()
-            if resume:
-                with connect() as db:
-                    row = db.execute('SELECT * FROM jobs ORDER BY id DESC LIMIT 1').fetchone()
-                    if not row: raise RuntimeError('Không có job để tiếp tục.')
-                    job_id = row['id']
-                    if not config: config = json.loads(row['config'])
-                    db.execute("UPDATE images SET status='pending',error=NULL WHERE status IN ('failed','processing')")
-                    total = db.execute("SELECT count(*) FROM images WHERE status!='processed'").fetchone()[0]
-                    db.execute("UPDATE jobs SET state='running',total=?,error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?", (total, job_id))
-            else:
-                with connect() as db:
-                    total = db.execute("SELECT count(*) FROM images WHERE status!='processed'").fetchone()[0]
-                    if not total: raise RuntimeError('Hãy nhập thư mục ảnh trước.')
-                    db.execute("INSERT INTO jobs(state,config,total) VALUES('running',?,?)", (json.dumps(config), total))
-                    job_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-            self.thread = threading.Thread(target=self._run, args=(job_id, config), daemon=True, name='autolabel-job')
+            self.stop_target = "stopped"
+            self.thread = threading.Thread(
+                target=self._run,
+                args=(job_id, config),
+                daemon=True,
+                name="autolabel-job",
+            )
             self.thread.start()
             return job_id
 
     def pause(self):
-        self.pause_event.set()
-        with connect() as db:
-            db.execute("UPDATE jobs SET state='paused',updated_at=CURRENT_TIMESTAMP WHERE state='running'")
+        with self.lock:
+            if not self.busy() or self.stop_event.is_set():
+                raise RuntimeError("Không có job đang chạy để tạm dừng.")
+            self.pause_event.set()
+            with connect() as db:
+                db.execute(
+                    "UPDATE jobs SET state='pausing',updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (self.job_id,),
+                )
 
     def resume(self):
-        self.pause_event.clear()
-        if not self.thread or not self.thread.is_alive():
-            return self.start({}, resume=True)
-        with connect() as db:
-            db.execute("UPDATE jobs SET state='running',updated_at=CURRENT_TIMESTAMP WHERE state='paused'")
-        return None
+        with self.lock:
+            if not self.busy():
+                return self.start({}, resume=True)
+            if self.stop_event.is_set():
+                raise RuntimeError(
+                    "Đang kết thúc ảnh hiện tại. Chờ job dừng rồi tiếp tục."
+                )
+            if not self.pause_event.is_set():
+                raise RuntimeError("Job đang chạy, không cần tiếp tục.")
+            self.pause_event.clear()
+            with connect() as db:
+                db.execute(
+                    "UPDATE jobs SET state='running',updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (self.job_id,),
+                )
+            return self.job_id
+
+    def _request_stop(self, target):
+        with self.lock:
+            if not self.busy():
+                raise RuntimeError("Không có worker đang chạy.")
+            self.stop_target = target
+            self.stop_event.set()
+            self.pause_event.clear()
+            with connect() as db:
+                db.execute(
+                    "UPDATE jobs SET state=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    ("stopping" if target == "stopped" else "cancelling", self.job_id),
+                )
 
     def stop(self):
-        self.stop_event.set()
-        self.pause_event.clear()
-        with connect() as db:
-            db.execute("UPDATE jobs SET state='stopped',current_path=NULL,updated_at=CURRENT_TIMESTAMP WHERE state IN ('running','paused')")
-            db.execute("UPDATE images SET status='pending',error=NULL WHERE status='processing'")
+        self._request_stop("stopped")
 
     def cancel(self):
-        self.stop_event.set()
-        self.pause_event.clear()
-        with connect() as db:
-            db.execute("UPDATE jobs SET state='cancelled',current_path=NULL,updated_at=CURRENT_TIMESTAMP WHERE state IN ('running','paused')")
-            db.execute("UPDATE images SET status='pending',error=NULL WHERE status='processing'")
+        self._request_stop("cancelled")
+
+    def _checkpoint(self, job_id):
+        while self.pause_event.is_set() and not self.stop_event.is_set():
+            with self.lock, connect() as db:
+                if self.pause_event.is_set() and not self.stop_event.is_set():
+                    db.execute(
+                        "UPDATE jobs SET state='paused',updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (job_id,),
+                    )
+            self.stop_event.wait(0.15)
+        return not self.stop_event.is_set()
 
     def _run(self, job_id, config):
         try:
-            y = self.hub.load_yolo(config['yolo_model'], config.get('device', 'auto'))
-            # New jobs must never retain an optional model from an earlier job.
-            self.hub.dino=self.hub.dino_processor=self.hub.dino_path=None
-            self.hub.sam=self.hub.sam_processor=self.hub.sam_path=None
-            if config.get('dino_model'): self.hub.load_dino(config['dino_model'])
-            if config.get('sam_model'): self.hub.load_sam(config['sam_model'])
-            DATA_ROOT.mkdir(exist_ok=True, parents=True)
-
-            out_path = config.get('output_dir')
-            auto_save_active = bool(out_path and str(out_path).strip())
-            if auto_save_active:
-                out_dir = Path(out_path.strip()).expanduser().resolve()
-                out_images = out_dir / 'images'
-                out_labels = out_dir / 'labels'
-                out_images.mkdir(parents=True, exist_ok=True)
-                out_labels.mkdir(parents=True, exist_ok=True)
-                data_yaml = out_dir / 'data.yaml'
-                if not data_yaml.exists():
-                    yaml_content = "path: .\ntrain: images\nval: images\nnames:\n" + "".join(f"  {i}: {name}\n" for i, name in enumerate(CLASSES))
-                    data_yaml.write_text(yaml_content)
-                classes_txt = out_dir / 'classes.txt'
-                if not classes_txt.exists():
-                    classes_txt.write_text('\n'.join(CLASSES) + '\n')
-
+            # Release optional models from the preceding job before loading a new one.
+            self.hub.dino = self.hub.dino_processor = self.hub.dino_path = None
+            self.hub.sam = self.hub.sam_processor = self.hub.sam_path = None
+            self.hub.load_yolo(config["yolo_model"], config.get("device", "auto"))
+            if not self._checkpoint(job_id):
+                return
+            if config.get("dino_model"):
+                self.hub.load_dino(config["dino_model"])
+            if config.get("sam_model"):
+                self.hub.load_sam(config["sam_model"])
             with connect() as db:
-                rows = db.execute("SELECT * FROM images WHERE status!='processed' ORDER BY id").fetchall()
-                job_init = db.execute("SELECT processed, failed FROM jobs WHERE id=?", (job_id,)).fetchone()
-                processed_count = job_init['processed'] if job_init else 0
-                failed_count = job_init['failed'] if job_init else 0
-
-            for row in rows:
-                while self.pause_event.is_set() and not self.stop_event.is_set():
-                    with connect() as db:
-                        db.execute("UPDATE jobs SET state='paused',updated_at=CURRENT_TIMESTAMP WHERE id=?", (job_id,))
-                    time.sleep(0.3)
-                if self.stop_event.is_set():
+                ids = [
+                    r[0]
+                    for r in db.execute(
+                        "SELECT image_id FROM job_items WHERE job_id=? AND state='pending' ORDER BY image_id",
+                        (job_id,),
+                    )
+                ]
+            for iid in ids:
+                if not self._checkpoint(job_id):
                     break
-
-                with connect() as db:
-                    db.execute("UPDATE jobs SET state='running',current_path=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (row['rel_path'], job_id))
-                    db.execute("UPDATE images SET status='processing',error=NULL WHERE id=?", (row['id'],))
-
-                t0 = time.time()
+                with self.lock, connect() as db:
+                    row = db.execute(
+                        "SELECT * FROM images WHERE id=?", (iid,)
+                    ).fetchone()
+                    if not row:
+                        continue
+                    protected = db.execute(
+                        "SELECT 1 FROM annotations WHERE image_id=? AND (reviewed=1 OR source IN ('original','manual')) LIMIT 1",
+                        (iid,),
+                    ).fetchone()
+                    if row["review_state"] != "unreviewed" or protected:
+                        db.execute(
+                            "UPDATE job_items SET state='processed' WHERE job_id=? AND image_id=?",
+                            (job_id, iid),
+                        )
+                        self._counts(db, job_id)
+                        continue
+                    db.execute(
+                        "UPDATE jobs SET current_path=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (row["rel_path"], job_id),
+                    )
+                    db.execute(
+                        "UPDATE images SET status='processing',error=NULL WHERE id=?",
+                        (iid,),
+                    )
+                    db.execute(
+                        "UPDATE job_items SET state='processing' WHERE job_id=? AND image_id=?",
+                        (job_id, iid),
+                    )
+                start = time.monotonic()
                 try:
-                    with Image.open(row['path']) as im: image = im.convert('RGB')
-                    yd = self.hub.yolo_predict(image, config.get('yolo_conf', 0.25), config.get('imgsz', 960), config.get('mode', 'standard'))
-                    dino_error = None
+                    with Image.open(row["path"]) as source:
+                        image = ImageOps.exif_transpose(source).convert("RGB")
+                    yd = self.hub.yolo_predict(
+                        image,
+                        config.get("yolo_conf", 0.25),
+                        config.get("imgsz", 960),
+                        config.get("mode", "standard"),
+                    )
+                    errors = []
                     try:
-                        dd = self.hub.dino_predict(image, config.get('dino_box_threshold', 0.28), config.get('dino_text_threshold', 0.25)) if self.hub.dino else []
-                    except Exception as e:
+                        dd = (
+                            self.hub.dino_predict(
+                                image,
+                                config.get("dino_box_threshold", 0.28),
+                                config.get("dino_text_threshold", 0.25),
+                            )
+                            if self.hub.dino
+                            else []
+                        )
+                    except Exception as exc:
                         dd = []
-                        dino_error = str(e)[:400]
-                    final = match_and_score(yd, dd, *image.size, config.get('match_iou', 0.4))
-                    if dino_error:
-                        for d in final: d['metadata']['dino_error'] = dino_error
-                    for d in final:
-                        if d['source'] == 'yolo_only' and not self.hub.dino:
-                            d['quality'] = 'needs_review'
-                            d['accepted'] = False
-                        if d['quality'] == 'high_agreement' and config.get('auto_accept', False):
-                            d['accepted'] = True
-                        if (d['source'] == 'yolo_only' and not self.hub.dino
-                                and config.get('accept_yolo_only', False)
-                                and d['class_name'] in CLASSES):
-                            d['accepted'] = True
-                            d['metadata']['acceptance_policy'] = 'unverified_yolo_only_opt_in'
-                        d['image_id'] = row['id']
-
-                    sam_error = None
+                        errors.append("DINO: " + str(exc)[:400])
+                    final = match_and_score(
+                        yd, dd, *image.size, config.get("match_iou", 0.4)
+                    )
+                    for item in final:
+                        item["image_id"] = iid
+                        item["metadata"]["job_id"] = job_id
+                        item["metadata"]["model_path"] = self.hub.yolo_path
+                        item["accepted"] = bool(
+                            item["quality"] == "high_agreement"
+                            and config.get("auto_accept")
+                        )
+                        if (
+                            item["source"] == "yolo_only"
+                            and not self.hub.dino
+                            and config.get("accept_yolo_only")
+                            and not item["metadata"].get("warnings")
+                        ):
+                            item["accepted"] = True
+                            item["metadata"][
+                                "acceptance_policy"
+                            ] = "unverified_yolo_only_opt_in"
                     if self.hub.sam and final:
-                        try: self.hub.sam_refine(image, final, DATA_ROOT / 'masks')
-                        except Exception as e:
-                            sam_error = str(e)[:400]
-                            for d in final: d['metadata']['sam_error'] = sam_error
-
-                    processed_count += 1
-                    with connect() as db:
-                        db.execute("DELETE FROM annotations WHERE image_id=? AND source NOT IN ('original','manual') AND reviewed=0", (row['id'],))
-                        for d in final:
-                            if d['class_name'] not in (*CLASSES, 'ambiguous'): continue
-                            b = d['box']
-                            class_id = CLASSES.index(d['class_name']) if d['class_name'] in CLASSES else -1
-                            db.execute("INSERT INTO annotations(image_id,source,class_name,class_id,x1,y1,x2,y2,score,quality,heuristic_score,accepted,metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                              (row['id'], d['source'], d['class_name'], class_id, *b, d['score'], d['quality'], d['heuristic_score'], int(d['accepted']), json.dumps(d['metadata'], ensure_ascii=False)))
-                        db.execute("UPDATE images SET status='processed',processed_at=CURRENT_TIMESTAMP,error=NULL WHERE id=?", (row['id'],))
-                        db.execute("UPDATE jobs SET processed=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (processed_count, job_id))
-                        db.execute("INSERT INTO events(image_id,level,message) VALUES(?,?,?)", (row['id'], 'info', f"Đã xử lý trong {time.time()-t0:.2f}s; YOLO={len(yd)}, DINO={len(dd)}"))
-                        if dino_error or sam_error:
-                            db.execute("INSERT INTO events(image_id,level,message) VALUES(?,?,?)", (row['id'], 'warning', 'DINO: ' + str(dino_error) + '; SAM: ' + str(sam_error)))
-
-                    # Incremental real-time file save (gán tới đâu lưu tới đó)
-                    if auto_save_active:
                         try:
-                            src_img = Path(row['path'])
-                            dst_img = out_images / f"{row['id']:08d}_{src_img.name}"
-                            if not dst_img.exists():
-                                shutil.copy2(src_img, dst_img)
-                            w, he = image.size
-                            lines = []
-                            for d in final:
-                                cname = d.get('class_name')
-                                if cname in CLASSES and d.get('accepted'):
-                                    cid = CLASSES.index(cname)
-                                    b = d['box']
-                                    bw = (b[2] - b[0]) / w
-                                    bh = (b[3] - b[1]) / he
-                                    cx = (b[0] + b[2]) / (2 * w)
-                                    cy = (b[1] + b[3]) / (2 * he)
-                                    if bw > 0 and bh > 0:
-                                        lines.append(f"{cid} {cx:.7f} {cy:.7f} {bw:.7f} {bh:.7f}")
-                            dst_lbl = out_labels / f"{row['id']:08d}_{src_img.stem}.txt"
-                            dst_lbl.write_text('\n'.join(lines) + ('\n' if lines else ''))
-                        except Exception as e:
-                            with connect() as db:
-                                db.execute("INSERT INTO events(image_id,level,message) VALUES(?,?,?)", (row['id'], 'warning', f"Lỗi auto-save {out_dir}: {str(e)[:300]}"))
-
-                except Exception as e:
-                    failed_count += 1
+                            self.hub.sam_refine(image, final, DATA_ROOT / "masks")
+                        except Exception as exc:
+                            errors.append("SAM: " + str(exc)[:400])
+                    with self.lock, connect() as db:
+                        db.execute(
+                            "DELETE FROM annotations WHERE image_id=? AND reviewed=0 AND source NOT IN ('original','manual')",
+                            (iid,),
+                        )
+                        for item in final:
+                            name = item["class_name"]
+                            if name not in (*CLASSES, "ambiguous"):
+                                continue
+                            db.execute(
+                                "INSERT INTO annotations(image_id,source,class_name,class_id,x1,y1,x2,y2,score,quality,heuristic_score,accepted,metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                (
+                                    iid,
+                                    item["source"],
+                                    name,
+                                    CLASSES.index(name) if name in CLASSES else -1,
+                                    *item["box"],
+                                    item["score"],
+                                    item["quality"],
+                                    item["heuristic_score"],
+                                    int(item["accepted"]),
+                                    json.dumps(item["metadata"], ensure_ascii=False),
+                                ),
+                            )
+                        db.execute(
+                            "UPDATE images SET status='processed',processed_at=CURRENT_TIMESTAMP,error=NULL,review_version=review_version+1 WHERE id=?",
+                            (iid,),
+                        )
+                        db.execute(
+                            "UPDATE job_items SET state='processed',duration=? WHERE job_id=? AND image_id=?",
+                            (time.monotonic() - start, job_id, iid),
+                        )
+                        self._counts(db, job_id)
+                        db.execute(
+                            "INSERT INTO events(image_id,level,message) VALUES(?,'info',?)",
+                            (
+                                iid,
+                                f"Đã xử lý {len(final)} nhãn trong {time.monotonic()-start:.2f}s",
+                            ),
+                        )
+                        for error in errors:
+                            db.execute(
+                                "INSERT INTO events(image_id,level,message) VALUES(?,'warning',?)",
+                                (iid, error),
+                            )
+                    if config.get("output_dir"):
+                        self._save_proposals(
+                            job_id, config["output_dir"], dict(row), final
+                        )
+                except Exception as exc:
                     with connect() as db:
-                        db.execute("UPDATE images SET status='failed',error=? WHERE id=?", (str(e)[:1000], row['id']))
-                        db.execute("UPDATE jobs SET failed=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (failed_count, job_id))
-                        db.execute("INSERT INTO events(image_id,level,message) VALUES(?,?,?)", (row['id'], 'error', str(e)[:1000]))
+                        db.execute(
+                            "UPDATE images SET status='failed',error=? WHERE id=?",
+                            (str(exc)[:1500], iid),
+                        )
+                        db.execute(
+                            "UPDATE job_items SET state='failed',error=? WHERE job_id=? AND image_id=?",
+                            (str(exc)[:1500], job_id, iid),
+                        )
+                        self._counts(db, job_id)
+                        db.execute(
+                            "INSERT INTO events(image_id,level,message) VALUES(?,'error',?)",
+                            (iid, str(exc)[:1500]),
+                        )
+            if (
+                config.get("analyze_traffic_after", False)
+                and not self.stop_event.is_set()
+            ):
+                from ..traffic.analysis import analyze_all
 
-            if not self.stop_event.is_set() and not self.pause_event.is_set():
                 try:
-                    summary = analyze_traffic()
+                    with self.lock:
+                        self.maintenance = True
                     with connect() as db:
-                        db.execute("INSERT INTO events(level,message) VALUES(?,?)", ('info', f"Traffic feature pass: {summary['processed']} ảnh, {summary['labeled']} pseudo-label, {summary['needs_review']} cần review"))
-                except Exception as e:
+                        db.execute(
+                            "UPDATE jobs SET current_path=? WHERE id=?",
+                            ("Đang cập nhật đặc trưng traffic…", job_id),
+                        )
+                    result = analyze_all(checkpoint=lambda: self._checkpoint(job_id))
                     with connect() as db:
-                        db.execute("INSERT INTO events(level,message) VALUES(?,?)", ('warning', f"Traffic analysis sau detection lỗi: {str(e)[:500]}"))
-
+                        db.execute(
+                            "INSERT INTO events(level,message) VALUES('info',?)",
+                            (
+                                f"Traffic: đã cập nhật {result['processed']} ảnh; nhãn theo luật cần kiểm duyệt.",
+                            ),
+                        )
+                except Exception as exc:
+                    with connect() as db:
+                        db.execute(
+                            "INSERT INTO events(level,message) VALUES('warning',?)",
+                            ("Traffic sau detection: " + str(exc)[:1000],),
+                        )
+                finally:
+                    with self.lock:
+                        self.maintenance = False
+        except Exception as exc:
             with connect() as db:
-                state = 'cancelled' if self.stop_event.is_set() else ('paused' if self.pause_event.is_set() else 'completed')
-                db.execute("UPDATE jobs SET state=?,current_path=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?", (state, job_id))
+                db.execute(
+                    "UPDATE jobs SET state='failed',error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (str(exc)[:1500], job_id),
+                )
+        finally:
+            with self.lock, connect() as db:
+                row = db.execute(
+                    "SELECT state,failed FROM jobs WHERE id=?", (job_id,)
+                ).fetchone()
+                if row:
+                    state = (
+                        self.stop_target
+                        if self.stop_event.is_set()
+                        else (
+                            "failed"
+                            if row["state"] == "failed"
+                            else (
+                                "completed_with_errors"
+                                if row["failed"]
+                                else "completed"
+                            )
+                        )
+                    )
+                    db.execute(
+                        "UPDATE jobs SET state=?,current_path=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (state, job_id),
+                    )
 
-        except Exception as e:
+    def _save_proposals(self, job_id, output_dir, row, final):
+        try:
+            dest = Path(output_dir).expanduser().resolve() / f"job_{job_id}"
+            (dest / "proposals").mkdir(parents=True, exist_ok=True)
+            (dest / "images").mkdir(exist_ok=True)
+            filename = f"{row['id']:08d}_{Path(row['path']).name}"
+            copy_image(row["path"], dest / "images" / filename)
+            payload = {
+                "image": filename,
+                "image_id": row["id"],
+                "review_required": True,
+                "annotations": final,
+            }
+            target = dest / "proposals" / f"{row['id']:08d}.json"
+            temporary = target.with_suffix(".tmp")
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            temporary.replace(target)
+            (dest / "README.txt").write_text(
+                "Checkpoint proposals only. Unreviewed images are NOT negative examples.\nUse the application Export page after review to create YOLO training data.\n",
+                encoding="utf-8",
+            )
+        except Exception as exc:
             with connect() as db:
-                db.execute("UPDATE jobs SET state=?,error=?,current_path=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?", ('failed', str(e)[:1000], job_id))
+                db.execute(
+                    "INSERT INTO events(image_id,level,message) VALUES(?,'warning',?)",
+                    (row["id"], "Không lưu được proposal: " + str(exc)[:1000]),
+                )

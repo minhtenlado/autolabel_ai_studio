@@ -1,4 +1,18 @@
-# AutoLabel AI Studio – 0.3 Portable
+# AutoLabel AI Studio
+
+## 0.4.0 — 2026-10-23
+
+- Thiết kế lại giao diện tiếng Việt: quy trình 4 bước, dashboard dữ liệu thật, dark mode, điều hướng mobile đầy đủ, tìm kiếm/phân trang/thumbnail, trạng thái rỗng và tiến độ tác vụ.
+- Editor có undo/redo, vẽ box mọi hướng, resize/pan/zoom, lớp evidence, dirty guard, lưu & ảnh tiếp, lịch sử và xác nhận negative. Lưu qua phiên bản ảnh để ngăn tab cũ ghi đè; không mất metadata DINO/SAM.
+- Migration schema v4 có backup; import kiểm tra trước clear, giữ ID ảnh tăng sau thay dataset, kiểm tra ảnh/nhãn đầy đủ, hỗ trợ cấu trúc YOLO lồng nhau và tên lớp trong data.yaml. Tùy chọn giữ frame trùng khác thời điểm.
+- Task nền có progress cho import/export/traffic; khóa phối hợp với worker và review. Job có danh sách ảnh bền vững, stop/cancel riêng, pause/resume/retry/restart giữ đúng tiến độ; bảo vệ nhãn gốc và thủ công.
+- Lưu incremental thành JSON proposals, không tạo nhãn âm tính giả. Export detection chỉ dữ liệu đủ điều kiện, pseudo-label opt-in; snapshot không ghi đè, manifest, lịch sử và ZIP. Split camera/ngày, gộp nhóm trùng SHA-256 để tránh trùng nội dung train/val.
+- ROI vẽ trực quan và calibration; exclusion và box human-rejected được loại khỏi thống kê. Phân tích lại giữ nhãn classification người đã duyệt; đặc trưng stale phải cập nhật trước CSV. Xuất toàn bộ chuỗi, không cắt ở 2.000 hàng.
+- Bỏ frontend/dist trùng, tách module frontend và giữ không cần build. Validation checkpoint detection và geometry hữu hạn; bổ sung đồng bộ EXIF, download theo export ID và chặn ghi khác origin.
+- 47 unit/API/worker tests và 15 nhóm kiểm tra trình duyệt trên desktop/mobile. Chưa chạy weights thật, GPU, Docker hoặc Windows/macOS thực tế. Không có benchmark khẳng định tăng độ chính xác AI.
+- Bổ sung form thực thi, báo cáo audit, hướng dẫn migration/API và tài liệu kiến trúc.
+
+## 0.3 Portable — lịch sử
 
 ## Các thay đổi có thể kiểm tra
 
