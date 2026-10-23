@@ -63,12 +63,55 @@ class ReviewAPITests(StudioTestCase):
             self.assertEqual(len(labels), 1)
             self.assertEqual(z.read(labels[0]), b"")
 
-    def test_partial_ai_acceptance_cannot_create_incomplete_training_labels(self):
+    def test_pseudo_export_keeps_all_boxes_even_when_only_some_are_accepted(self):
         iid = self.add_image(status="processed")
         self.add_box(iid, accepted=1)
         self.add_box(iid, accepted=0)
         result = self.client.post("/api/export", json={"include_pseudo": True})
-        self.assertEqual(result.status_code, 400, result.text)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()["images"], 1)
+        self.assertEqual(result.json()["pseudo_labels"], 1)
+
+    def test_partial_stopped_job_can_export_only_completed_images(self):
+        first = self.add_image("cam_a/first.png", status="processed")
+        self.add_box(first, accepted=1)
+        self.add_box(first, accepted=0)
+        second = self.add_image("cam_a/second.png", color="blue", status="processed")
+        self.add_box(second, accepted=0)
+        pending = self.add_image("cam_a/pending.png", color="green", status="pending")
+        self.add_box(pending, accepted=1)
+        self.add_image("cam_a/empty.png", color="yellow", status="processed")
+        invalid = self.add_image("cam_a/invalid.png", color="purple", status="processed")
+        invalid_box = self.add_box(invalid, accepted=0)
+        with store.connect() as db:
+            db.execute(
+                "UPDATE annotations SET class_id=-1 WHERE id=?", (invalid_box,)
+            )
+
+        result = self.client.post("/api/export", json={"include_pseudo": True})
+        self.assertEqual(result.status_code, 200, result.text)
+        payload = result.json()
+        self.assertEqual(payload["images"], 2)
+        self.assertEqual(payload["pseudo_labels"], 2)
+        self.assertEqual(payload["negative_images"], 0)
+        self.assertEqual(payload["pseudo_empty_excluded"], 1)
+        self.assertEqual(payload["pseudo_invalid_excluded"], 1)
+
+        archive = self.client.get(payload["download_url"])
+        self.assertEqual(archive.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(archive.content)) as z:
+            manifest = json.loads(
+                z.read(next(n for n in z.namelist() if n.endswith("manifest.json")))
+            )
+            self.assertEqual({row["image_id"] for row in manifest}, {first, second})
+            self.assertTrue(
+                all(
+                    row["acceptance_policy"] == "pseudo_label_unreviewed"
+                    for row in manifest
+                )
+            )
+            labels = [n for n in z.namelist() if "/labels/" in n and n.endswith(".txt")]
+            self.assertEqual(sum(len(z.read(name).splitlines()) for name in labels), 3)
 
     def test_export_default_excludes_ai_but_opt_in_allows_full_proposal(self):
         iid = self.add_image(status="processed")

@@ -65,7 +65,7 @@ Chọn thiết bị và preset: CPU fast (640), Standard (960), Small object (ti
 
 Mặc định proposal cần review. Auto-accept YOLO + DINO đồng thuận hoặc YOLO-only là **opt-in pseudo-label**, không trở thành ground truth chỉ vì score cao. SAM gợi ý hình học, không xác nhận đúng lớp.
 
-Job lưu danh sách ảnh và commit sau từng ảnh. Tạm dừng/dừng/hủy có hiệu lực ở ranh giới ảnh, không ngắt inference đang chạy. **Dừng an toàn** cho phép tiếp tục cùng job; **Hủy job** kết thúc phần còn lại và giữ kết quả đã lưu. Resume chỉ chạy phần chưa hoàn tất/lỗi, không làm progress vượt 100%. Khi khởi động lại, job bị gián đoạn trở về trạng thái có thể tiếp tục.
+Job lưu danh sách ảnh và commit sau từng ảnh. Tạm dừng/dừng/hủy có hiệu lực ở ranh giới ảnh, không ngắt inference đang chạy. **Dừng an toàn** cho phép tiếp tục cùng job; **Hủy job** kết thúc phần còn lại và giữ kết quả đã lưu. Resume chỉ chạy phần chưa hoàn tất/lỗi, không làm progress vượt 100%. Khi khởi động lại, job bị gián đoạn trở về trạng thái có thể tiếp tục. Muốn xuất phần đã gán nhãn giữa chừng: bấm **Dừng an toàn**, đợi job chuyển sang Đã dừng, vào Xuất dataset và bật tùy chọn pseudo-label. Snapshot chỉ lấy ảnh `processed`; ảnh pending không vào export. Ảnh đang inference được hoàn tất rồi mới dừng.
 
 Nếu bật lưu proposal liên tục, thư mục `job_N/` chứa ảnh và **JSON**, không tạo nhãn YOLO rỗng cho ảnh chưa duyệt. Mặc định cập nhật đặc trưng traffic sau detection; có thể tắt trong tùy chọn nâng cao.
 
@@ -95,11 +95,11 @@ Nhãn theo ngưỡng là **gợi ý theo luật**, chưa phải mô hình classi
 
 | Kiểu | Nội dung / chính sách mặc định |
 |---|---|
-| YOLO Detection | Ảnh đã duyệt đầy đủ (kể cả negative), hoặc ảnh có toàn bộ nhãn nhập hợp lệ. Không xuất một phần proposal accepted gây thiếu ground truth |
+| YOLO Detection | Mặc định lấy ảnh đã duyệt đầy đủ (kể cả negative) hoặc ảnh có nhãn nhập hợp lệ. Tùy chọn pseudo-label lấy toàn bộ box AI trên từng ảnh `processed`, kể cả box chưa chấp nhận; ảnh pending, ảnh không có box và ảnh có box/lớp không hợp lệ bị loại |
 | Classification | Chỉ nhãn người đã xác nhận. Pseudo-label theo luật cần bật riêng |
 | Traffic CSV | Toàn bộ bản ghi có timestamp, không giới hạn ngầm 2.000 hàng; giữ provenance/trạng thái review và báo số bỏ qua |
 
-Mỗi lần xuất tạo **thư mục riêng + ZIP + manifest + lịch sử**, không ghi đè bản cũ. Thư mục tùy chọn là thư mục cha, snapshot được tạo bên trong. Chuẩn bị dung lượng cho cả ảnh copy và ZIP.
+Mỗi lần xuất tạo **thư mục riêng + ZIP + manifest + lịch sử**, không ghi đè bản cũ. Thư mục tùy chọn là thư mục cha, snapshot được tạo bên trong. Chuẩn bị dung lượng cho cả ảnh copy và ZIP. Nhãn AI xuất theo tùy chọn vẫn là pseudo-label, chưa phải ground truth; dự đoán rỗng không được hiểu là ảnh nền nếu chưa có người xác nhận.
 
 Detection/classification mặc định chia nhóm camera/ngày; các nhóm có ảnh trùng SHA-256 được gộp để tránh trùng nội dung train/val. Thiếu timestamp sẽ fallback hash và cảnh báo. Chỉ một nhóm thì toàn bộ vào train, val rỗng có cảnh báo. Tỷ lệ val là tỷ lệ **nhóm**, không đảm bảo đúng tỷ lệ số ảnh hay cân bằng class. Cách chia này chưa loại trừ mọi dạng rò rỉ dữ liệu.
 

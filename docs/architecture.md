@@ -28,7 +28,7 @@ Job gồm tổng cố định từ `job_items`. `processed + failed ≤ total`; 
 
 ## Quality và provenance
 
-`high_agreement`, `needs_review`, `high_risk` là tier heuristic, không phải độ tin cậy đã hiệu chuẩn. AI acceptance mặc định tắt. Lưu review gắn `human_reviewed`/`human_rejected` cho box; chỉ complete review mới đánh dấu ảnh đã duyệt. Không export một phần proposal hoặc nhãn nhập lỗi thành ground truth thiếu box.
+`high_agreement`, `needs_review`, `high_risk` là tier heuristic, không phải độ tin cậy đã hiệu chuẩn. AI acceptance mặc định tắt. Lưu review gắn `human_reviewed`/`human_rejected` cho box; chỉ complete review mới đánh dấu ảnh đã duyệt. Mặc định export không lấy proposal AI. Khi bật pseudo-label, lấy toàn bộ box AI có lớp/geometry hợp lệ của ảnh `processed`, kể cả box chưa auto-accept; ảnh pending, prediction rỗng và ảnh có box lỗi bị loại. Đây vẫn là nhãn AI chưa được người xác minh, không phải ground truth.
 
 Traffic đếm theo tâm box nằm trong ROI đường, bỏ vùng exclusion và box human-rejected. Tổng diện tích box/diện tích ROI là **proxy**, có thể chồng lấn, không phải mask union. Calibration sinh gợi ý theo luật. Human-verified label/provenance được giữ qua phân tích lại; ROI/review đánh dấu features stale. CSV không tạo timestamp/nội suy giả và không cắt hàng theo phân trang UI.
 

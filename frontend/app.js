@@ -443,9 +443,16 @@ async function exportData() {
     type !== "temporal" &&
     include_pseudo &&
     !(await confirmAction({
-      title: "Thêm pseudo-label vào bản xuất?",
-      body: "Snapshot sẽ ghi rõ nhãn AI chưa được người xác minh. Hãy kiểm tra chất lượng trước khi huấn luyện.",
-      confirmText: "Xuất kèm pseudo-label",
+      title:
+        type === "detection"
+          ? "Xuất nhãn AI của ảnh đã xử lý?"
+          : "Thêm pseudo-label vào bản xuất?",
+      body:
+        type === "detection"
+          ? "Chỉ ảnh đã xử lý xong và có box hợp lệ được xuất. Ảnh pending, ảnh không có box và box không rõ lớp sẽ bị loại. Các nhãn này chưa được con người kiểm chứng."
+          : "Snapshot sẽ ghi rõ nhãn AI chưa được người xác minh. Hãy kiểm tra chất lượng trước khi huấn luyện.",
+      confirmText:
+        type === "detection" ? "Xuất nhãn AI chưa duyệt" : "Xuất kèm pseudo-label",
     }))
   )
     return;
@@ -499,9 +506,14 @@ function updateExportType() {
   const value = $("#exportType").value;
   $("#detectionExportFields").hidden = value !== "detection";
   $("#pseudoOption").hidden = value === "temporal";
+  $("#stopExportHint").hidden = value !== "detection";
+  $("#pseudoLabelText").textContent =
+    value === "detection"
+      ? "nhãn AI của ảnh đã xử lý xong, kể cả box chưa chấp nhận"
+      : "pseudo-label chưa được con người xác minh";
   $("#exportPolicy").textContent =
     value === "detection"
-      ? "Mặc định: ảnh đã duyệt hoàn chỉnh và nhãn YOLO nhập hợp lệ. Ảnh âm tính phải được xác nhận rõ ràng."
+      ? "Mặc định: ảnh đã duyệt hoàn chỉnh và nhãn YOLO nhập hợp lệ. Khi bật pseudo-label, xuất tất cả box AI hợp lệ trên ảnh đã xử lý xong; ảnh pending và dự đoán rỗng bị loại."
       : value === "classification"
         ? "Mặc định chỉ xuất classification được con người xác nhận. Tách nhóm theo camera/ngày, khoảng 80% train và 20% validation."
         : "Xuất tất cả quan sát có timestamp hợp lệ, kèm trạng thái duyệt và nguồn nhãn. Cần phân tích lại nếu ROI hoặc box đã thay đổi.";

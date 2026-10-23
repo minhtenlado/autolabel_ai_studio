@@ -18,7 +18,7 @@
       <a class="brand" href="#dashboard" aria-label="AutoLabel, tổng quan"
         ><span class="brand-icon">A<span>↗</span></span
         ><span
-          >AutoLabel<strong>AI STUDIO <em>0.4</em></strong></span
+          >AutoLabel<strong>AI STUDIO <em>0.4.1</em></strong></span
         ></a
       >
       <div class="workspace-label">
@@ -905,9 +905,14 @@
                 <option value="0.3">30% validation / 70% train</option>
               </select>
             </div>
+            <div class="notice" id="stopExportHint">
+              Job đã lưu kết quả theo từng ảnh. Bấm <b>Dừng an toàn</b> và đợi
+              trạng thái chuyển sang Đã dừng; sau đó bật tùy chọn pseudo-label
+              để xuất phần đã xử lý. Ảnh pending không được đưa vào snapshot.
+            </div>
             <label class="checkbox-line" id="pseudoOption"
-              ><input type="checkbox" id="includePseudo" /> Cho phép thêm
-              pseudo-label chưa được con người xác minh</label
+              ><input type="checkbox" id="includePseudo" /> Xuất tất cả
+              <span id="pseudoLabelText">nhãn AI của ảnh đã xử lý xong, kể cả box chưa chấp nhận</span></label
             >
             <div class="notice" id="exportPolicy">
               Mặc định: ảnh đã duyệt hoàn chỉnh và nhãn YOLO nhập hợp lệ. Ảnh âm

@@ -27,7 +27,7 @@ from ..traffic import analysis as traffic
 init_db()
 runner = JobRunner()
 tasks = TaskManager(runner)
-app = FastAPI(title="AutoLabel AI Studio", version="0.4.0")
+app = FastAPI(title="AutoLabel AI Studio", version="0.4.1")
 
 
 @app.middleware("http")
@@ -140,7 +140,7 @@ def writable():
 @app.get("/api/config")
 def config():
     return {
-        "version": "0.4.0",
+        "version": "0.4.1",
         "classes": CLASSES,
         "traffic_classes": traffic.TRAFFIC_CLASSES,
         "workflow": ["dataset", "labeling", "review", "export"],
@@ -152,7 +152,7 @@ def health():
     result = detect_runtime()
     result.update(
         status="ok",
-        version="0.4.0",
+        version="0.4.1",
         workspace=str(DATA_ROOT),
         yolo_loaded=runner.hub.yolo_path,
         dino_loaded=runner.hub.dino_path,

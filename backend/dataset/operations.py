@@ -328,7 +328,27 @@ def copy_image(source, target):
     shutil.copy2(source, target)
 
 
-def export_candidates(include_pseudo=False):
+PREDICTION_SOURCES = {"yolo+dino", "yolo_only", "dino_only"}
+
+
+def _valid_export_annotation(annotation, image):
+    try:
+        coords = [annotation[k] for k in ("x1", "y1", "x2", "y2")]
+        return (
+            annotation["class_id"] in range(len(CLASSES))
+            and image["width"] is not None
+            and image["height"] is not None
+            and all(math.isfinite(x) for x in coords)
+            and 0 <= coords[0] < coords[2] <= image["width"]
+            and 0 <= coords[1] < coords[3] <= image["height"]
+        )
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def export_candidates(include_pseudo=False, diagnostics=None):
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics.update({"pseudo_empty_excluded": 0, "pseudo_invalid_excluded": 0})
     rows = []
     with connect() as db:
         db.execute("BEGIN")
@@ -347,9 +367,30 @@ def export_candidates(include_pseudo=False):
                 and not im["error"]
             )
             human = im["review_state"] in ("reviewed", "negative")
-            # Partial AI acceptance must not turn omitted objects into negatives.
-            pseudo = bool(accepted) and len(accepted) == len(annotations)
-            if human or imported or (include_pseudo and pseudo):
+            # A stopped job is exportable image-by-image. Only completed AI images
+            # with actual, classifiable proposals are pseudo-labels; pending images
+            # and empty predictions must never be converted into background labels.
+            prediction_image = (
+                include_pseudo
+                and im["status"] == "processed"
+                and im["review_state"] == "unreviewed"
+                and bool(annotations)
+                and all(a["source"] in PREDICTION_SOURCES for a in annotations)
+            )
+            if prediction_image:
+                if not all(_valid_export_annotation(a, image) for a in annotations):
+                    diagnostics["pseudo_invalid_excluded"] += 1
+                    continue
+                rows.append((image, annotations, "pseudo_label_unreviewed"))
+                continue
+            if (
+                include_pseudo
+                and im["status"] == "processed"
+                and im["review_state"] == "unreviewed"
+                and not annotations
+            ):
+                diagnostics["pseudo_empty_excluded"] += 1
+            if human or imported:
                 if accepted or im["review_state"] == "negative":
                     rows.append(
                         (
@@ -374,8 +415,13 @@ def export_dataset(
     progress=None,
 ):
     progress = progress or (lambda *args: None)
-    rows = export_candidates(include_pseudo)
+    diagnostics = {}
+    rows = export_candidates(include_pseudo, diagnostics)
     if not rows:
+        if include_pseudo:
+            raise ValueError(
+                "Chưa có ảnh đủ điều kiện. Cần ảnh đã xử lý xong với ít nhất một box có lớp hợp lệ; ảnh không có box chỉ được xuất sau khi người xác nhận là ảnh nền."
+            )
         raise ValueError(
             "Chưa có ảnh đủ điều kiện. Duyệt đầy đủ ảnh hoặc xác nhận ảnh không có xe trước khi xuất."
         )
@@ -398,6 +444,14 @@ def export_dataset(
     splits, groups, warnings = split_groups(
         [i for i, _, _ in rows], split_method, val_fraction
     )
+    if include_pseudo and diagnostics["pseudo_empty_excluded"]:
+        warnings.append(
+            f"{diagnostics['pseudo_empty_excluded']:,} ảnh AI đã xử lý nhưng không có box bị loại; chưa coi là ảnh nền vì chưa được người xác nhận."
+        )
+    if include_pseudo and diagnostics["pseudo_invalid_excluded"]:
+        warnings.append(
+            f"{diagnostics['pseudo_invalid_excluded']:,} ảnh có ít nhất một nhãn AI thiếu lớp hợp lệ hoặc box lỗi bị loại; hãy kiểm duyệt trước khi xuất."
+        )
     dest = new_destination(name, output_dir)
     try:
         for split in ("train", "val"):
@@ -443,7 +497,7 @@ def export_dataset(
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         (dest / "README.txt").write_text(
-            "YOLO Detection snapshot. Negative images require explicit human confirmation.\nImported labels retain imported provenance; pseudo labels require opt-in.\nEXIF-rotated images are normalized to match box coordinates.\n"
+            "YOLO Detection snapshot. Negative images require explicit human confirmation.\nImported labels retain imported provenance; pseudo labels require opt-in. Processed AI predictions may be unreviewed and are not ground truth.\nEXIF-rotated images are normalized to match box coordinates.\n"
             + "\n".join(warnings),
             encoding="utf-8",
         )
@@ -459,7 +513,11 @@ def export_dataset(
                 "train": sum(s == "train" for s in splits.values()),
                 "val": sum(s == "val" for s in splits.values()),
                 "warnings": warnings,
-                "pseudo_labels": sum(p == "pseudo_label" for _, _, p in rows),
+                "pseudo_labels": sum(
+                    p.startswith("pseudo_label") for _, _, p in rows
+                ),
+                "pseudo_empty_excluded": diagnostics["pseudo_empty_excluded"],
+                "pseudo_invalid_excluded": diagnostics["pseudo_invalid_excluded"],
             },
         )
     except Exception:

@@ -37,7 +37,7 @@ Nếu checkout đã có thay đổi khác, đọc diff và xử lý xung đột 
 | Review/export song song | Maintenance import/export/analyze chặn ghi review; inference chặn ảnh đang xử lý, ảnh khác có thể review trước giai đoạn traffic |
 | Lưu incremental | JSON proposal + ảnh dưới `job_N/`, không còn `.txt` rỗng làm nhãn train |
 | Output export | `output_dir` là thư mục cha; luôn tạo snapshot con duy nhất, không ghi đè |
-| Detection export | Mặc định reviewed/negative hoặc nhãn gốc nhập hợp lệ. Pseudo-label phải opt-in và toàn bộ proposal phải accepted |
+| Detection export | Mặc định reviewed/negative hoặc nhãn gốc nhập hợp lệ. `include_pseudo` là opt-in; ảnh AI phải `processed`, có box và mọi box có lớp/geometry hợp lệ. Khi dừng job giữa chừng, ảnh pending không được xuất; toàn bộ box của ảnh hoàn tất được ghi provenance pseudo-label dù chưa auto-accept |
 | Phân trang | `/api/images`: limit tối đa 200; `/api/traffic/labels`: tối đa 500. Export lấy toàn bộ dữ liệu đủ điều kiện |
 | ZIP tải xuống | `/api/exports`, `/api/exports/{id}/download`; không mở đường dẫn file tùy ý qua endpoint download |
 | Traffic CSV | Giữ nhãn human-verified; chặn nếu features stale; extended schema, không giả tương thích TCN legacy |

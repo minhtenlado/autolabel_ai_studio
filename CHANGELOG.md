@@ -1,5 +1,10 @@
 # AutoLabel AI Studio
 
+## 0.4.1 — 2026-10-24
+
+- Có thể dừng job ở ranh giới ảnh và xuất ngay phần ảnh AI đã xử lý hoàn tất, không cần chờ toàn bộ dataset. Tùy chọn pseudo-label xuất tất cả box có lớp/geometry hợp lệ trên ảnh `processed`, kể cả box chưa được auto-accept; ảnh pending và ảnh dự đoán rỗng không được đưa vào.
+- Manifest ghi provenance `pseudo_label_unreviewed`; cảnh báo số ảnh không box hoặc nhãn không hợp lệ bị loại. Pseudo-label vẫn cần con người kiểm duyệt trước khi xem là nhãn chuẩn.
+
 ## 0.4.0 — 2026-10-23
 
 - Thiết kế lại giao diện tiếng Việt: quy trình 4 bước, dashboard dữ liệu thật, dark mode, điều hướng mobile đầy đủ, tìm kiếm/phân trang/thumbnail, trạng thái rỗng và tiến độ tác vụ.
